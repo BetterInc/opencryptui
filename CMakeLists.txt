@@ -93,6 +93,8 @@ set(LIBRARY_SOURCES
     include/logging/secure_logger.h
     include/cryptoprovider.h
     src/opensslprovider.cpp
+    src/opensslprovider_standard.cpp
+    src/opensslprovider_aead.cpp
     src/libsodiumprovider.cpp
     src/argon2provider.cpp
     ui/mainwindow.ui
