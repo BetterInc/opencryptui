@@ -221,9 +221,35 @@ target_link_libraries(OpenCryptUITest PRIVATE
     sodium
 )
 
-# Add test to CTest
+# Roundtrip regression test — standalone binary, no UI.
+# Guards against the sign/verify aliasing + trailer-format bugs fixed previously:
+# a quick encrypt→decrypt must succeed and the recovered plaintext must match.
+add_executable(TestRoundtrip tests/test_roundtrip.cpp)
+set_target_properties(TestRoundtrip PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_definitions(TestRoundtrip PRIVATE -DTEST_MODE -DENABLE_LOGGING)
+target_include_directories(TestRoundtrip PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/logging
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${Qt5Core_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIR}
+)
+target_link_libraries(TestRoundtrip PRIVATE
+    EncryptionLib
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    argon2
+    sodium
+)
+
+# Add tests to CTest
 enable_testing()
 add_test(NAME OpenCryptUITest COMMAND OpenCryptUITest)
+add_test(NAME TestRoundtripGCM COMMAND TestRoundtrip AES-256-GCM)
+add_test(NAME TestRoundtripCBC COMMAND TestRoundtrip AES-256-CBC)
 
 # Copy test runner scripts
 configure_file(
