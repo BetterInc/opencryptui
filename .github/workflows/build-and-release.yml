@@ -172,181 +172,58 @@ jobs:
         shell: bash
         run: cmake --build build --config Release
 
-      # CI Test script steps have been removed in favor of direct commands in the run steps below
+      - name: Deploy Qt (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          # macdeployqt copies all Qt frameworks + plugins into the .app
+          # bundle, then rewrites install_name_tool paths so the app runs
+          # on any Mac without requiring Homebrew. MACOSX_BUNDLE in
+          # CMakeLists.txt gives us the .app; macdeployqt populates it.
+          APP="build/OpenCryptUI.app"
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: $APP not found — is MACOSX_BUNDLE set on the target?"
+            ls -la build/
+            exit 1
+          fi
+          "$(brew --prefix qt@5)/bin/macdeployqt" "$APP" -verbose=1
 
-      - name: Copy DLLs for Windows
+          # Third-party dylibs we link directly (sodium/argon2) — macdeployqt
+          # does copy them but may leave install_name pointing at Homebrew.
+          # A quick otool sanity check so a later Gatekeeper run-test surfaces
+          # any straggling /opt/homebrew/... paths early.
+          echo "Linked dylibs after macdeployqt:"
+          otool -L "$APP/Contents/MacOS/OpenCryptUI" | head -30
+
+      - name: Deploy Qt (Windows)
         if: matrix.os == 'windows-latest'
         shell: msys2 {0}
         run: |
-          echo "Creating necessary directories for Qt plugins..."
-          mkdir -p build/platforms build/styles build/imageformats build/iconengines build/printsupport
-      
-          echo "Finding ntldd.exe..."
-          NTLDD_PATH=$(find /mingw64/bin -name "ntldd.exe" || find /mingw64 -name "ntldd.exe" 2>/dev/null || echo "")
-          if [ -z "$NTLDD_PATH" ]; then
-              echo "ntldd.exe not found via find, trying which..."
-              NTLDD_PATH=$(which ntldd.exe 2>/dev/null || echo "")
-              if [ -z "$NTLDD_PATH" ]; then
-                  echo "WARNING: ntldd.exe not found, will rely on manual DLL list"
-              else
-                  echo "ntldd.exe found at $NTLDD_PATH"
-              fi
-          else
-              echo "ntldd.exe found at $NTLDD_PATH"
+          # windeployqt is the official Qt tool for bundling DLLs + plugins.
+          # It replaces the previous hand-rolled ntldd/find/cp loop, which
+          # was fragile to Qt/MSYS2 updates (DLL name suffixes kept drifting).
+          if [ ! -f build/OpenCryptUI.exe ]; then
+            echo "ERROR: build/OpenCryptUI.exe not found"
+            ls -la build/
+            exit 1
           fi
-      
-          echo "Checking if build/OpenCryptUI.exe exists..."
-          if [ ! -f "build/OpenCryptUI.exe" ]; then
-              echo "build/OpenCryptUI.exe not found! Checking directory contents:"
-              ls -la build/
-              exit 1
+          /mingw64/bin/windeployqt.exe --release --no-translations --no-system-d3d-compiler \
+            --no-opengl-sw --compiler-runtime build/OpenCryptUI.exe
+
+          # windeployqt covers Qt + its transitive deps, but not third-party
+          # libs we link directly (sodium, argon2, openssl). Copy those by
+          # pattern — no version suffix guessing.
+          for pattern in "libsodium-*.dll" "libargon2*.dll" "libssl-*.dll" "libcrypto-*.dll"; do
+            cp -f /mingw64/bin/$pattern build/ 2>/dev/null || echo "note: no match for $pattern (may be static)"
+          done
+
+          # App resources (icons, translations, etc.)
+          if [ -d resources ]; then
+            cp -rf resources build/
           fi
 
-          # List directories to help troubleshoot paths
-          echo "Mingw64 directory contents (lib):"
-          ls -la /mingw64/lib/ | grep -E 'sodium|argon2|ssl|crypto' || echo "No matches found"
-          
-          echo "Mingw64 bin directory contents:"
-          ls -la /mingw64/bin/ | grep -E 'dll|\.so' | head -20
-          
-          echo "Looking for Qt plugins directory:"
-          find /mingw64 -name "plugins" -type d | grep -i qt
-          QT_PLUGIN_PATH=$(find /mingw64 -name "plugins" -type d | grep -i qt | head -1)
-          echo "Using Qt plugin path: $QT_PLUGIN_PATH"
-      
-          if [ -n "$NTLDD_PATH" ] && [ -x "$NTLDD_PATH" ]; then
-              echo "Running ntldd and capturing DLLs..."
-              # Run a recursive dependency check to catch all required DLLs
-              DLL_PATHS=$(mktemp)
-              "$NTLDD_PATH" -R build/OpenCryptUI.exe | grep -i "mingw" | grep -v "not found" | awk '{print $3}' | sort -u > "$DLL_PATHS"
-              
-              echo "Copying DLLs to build directory..."
-              while IFS= read -r dll_path; do
-                if [[ -f "$dll_path" ]]; then
-                  echo "Copying $dll_path to build directory"
-                  cp "$dll_path" build/ || { echo "Failed to copy $dll_path"; }
-                fi
-              done < "$DLL_PATHS"
-              rm "$DLL_PATHS"
-          else
-              echo "Skipping ntldd dependency check as ntldd was not found or not executable"
-          fi
-      
-          echo "Copying essential system libraries..."
-          # Try different naming patterns for system libraries
-          cp -f /mingw64/bin/libstdc++-6.dll build/ || echo "Warning: libstdc++-6.dll not found"
-          cp -f /mingw64/bin/libgcc_s_seh-1.dll build/ || echo "Warning: libgcc_s_seh-1.dll not found"
-          cp -f /mingw64/bin/libwinpthread-1.dll build/ || echo "Warning: libwinpthread-1.dll not found"
-          cp -f /mingw64/bin/libssp-0.dll build/ || echo "Warning: libssp-0.dll not found"
-          
-          echo "Copying Qt dependencies..."
-          # Try to find Qt dependencies with an exhaustive approach
-          for dll in libglib-2.0-0 libgraphite2 libintl-8 libbz2-1 libpcre libpcre-1 libpcre2-16-0 \
-                    libharfbuzz-0 libpng16-16 zlib1 libiconv-2 libfreetype-6 libpcre16-0 \
-                    libdouble-conversion libbrotlidec libbrotlicommon; do
-            echo "Looking for $dll.dll..."
-            cp -f /mingw64/bin/${dll}.dll build/ 2>/dev/null || \
-            find /mingw64 -name "${dll}.dll" -exec cp -f {} build/ \; 2>/dev/null || \
-            echo "Warning: ${dll}.dll not found"
-          done
-          
-          echo "Copying crypto libraries..."
-          # Try to find crypto libraries with more flexible patterns
-          # Look for different versions of libsodium
-          for sodium in libsodium-23 libsodium-26 libsodium; do
-            find /mingw64 -name "${sodium}.dll" -exec cp -f {} build/ \; 2>/dev/null && break || echo "Warning: ${sodium}.dll not found"
-          done
-          
-          # Look for different versions of libargon2
-          cp -f /mingw64/bin/libargon2.dll build/ 2>/dev/null || \
-          find /mingw64 -name "libargon2*.dll" -exec cp -f {} build/ \; || \
-          echo "Warning: libargon2.dll not found"
-          
-          # Look for different versions of OpenSSL
-          for ssl in libssl-1_1-x64 libssl-1.1 libssl-3 libssl-3-x64 libssl; do
-            find /mingw64 -name "${ssl}.dll" -exec cp -f {} build/ \; 2>/dev/null && break || echo "Warning: ${ssl}.dll not found"
-          done
-          
-          for crypto in libcrypto-1_1-x64 libcrypto-1.1 libcrypto-3 libcrypto-3-x64 libcrypto; do
-            find /mingw64 -name "${crypto}.dll" -exec cp -f {} build/ \; 2>/dev/null && break || echo "Warning: ${crypto}.dll not found"
-          done
-      
-          echo "Copying Qt core DLLs..."
-          for qtdll in Qt5Core Qt5Gui Qt5Widgets Qt5Network Qt5DBus Qt5Xml Qt5PrintSupport; do
-            cp -f /mingw64/bin/${qtdll}.dll build/ || echo "Warning: ${qtdll}.dll not found"
-          done
-          
-          # Try optional Qt modules with flexible search
-          for optqt in Qt5Svg Qt5XmlPatterns; do
-            cp -f /mingw64/bin/${optqt}.dll build/ 2>/dev/null || \
-            find /mingw64 -name "${optqt}.dll" -exec cp -f {} build/ \; 2>/dev/null || \
-            echo "Warning: ${optqt}.dll not found (optional)"
-          done
-      
-          echo "Copying Qt plugins..."
-          # Try to use the plugin directory we found earlier
-          if [ -n "$QT_PLUGIN_PATH" ]; then
-            # Platform plugins (required)
-            if [ -d "${QT_PLUGIN_PATH}/platforms" ]; then
-              find "${QT_PLUGIN_PATH}/platforms" -name "qwindows.dll" -exec cp -f {} build/platforms/ \; || echo "Warning: qwindows.dll not found"
-              find "${QT_PLUGIN_PATH}/platforms" -name "qminimal.dll" -exec cp -f {} build/platforms/ \; || echo "Warning: qminimal.dll not found"
-            fi
-            
-            # Style plugins (required)
-            if [ -d "${QT_PLUGIN_PATH}/styles" ]; then
-              find "${QT_PLUGIN_PATH}/styles" -name "qwindowsvistastyle.dll" -exec cp -f {} build/styles/ \; || echo "Warning: qwindowsvistastyle.dll not found"
-            fi
-            
-            # Image format plugins (core ones required, others optional)
-            if [ -d "${QT_PLUGIN_PATH}/imageformats" ]; then
-              # Core formats (required)
-              for fmt in qjpeg qgif qico; do
-                find "${QT_PLUGIN_PATH}/imageformats" -name "${fmt}.dll" -exec cp -f {} build/imageformats/ \; || echo "Warning: ${fmt}.dll not found"
-              done
-              
-              # Optional formats
-              for optfmt in qsvg qpng qicns qtga qtiff qwbmp qwebp; do
-                find "${QT_PLUGIN_PATH}/imageformats" -name "${optfmt}.dll" -exec cp -f {} build/imageformats/ \; 2>/dev/null || echo "Warning: ${optfmt}.dll not found (optional)"
-              done
-            fi
-            
-            # Icon engines (optional)
-            if [ -d "${QT_PLUGIN_PATH}/iconengines" ]; then
-              find "${QT_PLUGIN_PATH}/iconengines" -name "qsvgicon.dll" -exec cp -f {} build/iconengines/ \; 2>/dev/null || echo "Warning: qsvgicon.dll not found (optional)"
-            fi
-            
-            # Print support (optional but useful)
-            if [ -d "${QT_PLUGIN_PATH}/printsupport" ]; then
-              find "${QT_PLUGIN_PATH}/printsupport" -name "windowsprintersupport.dll" -exec cp -f {} build/printsupport/ \; 2>/dev/null || echo "Warning: windowsprintersupport.dll not found (optional)"
-            fi
-          else
-            echo "WARNING: Qt plugin directory not found - skipping plugin copying"
-          fi
-          
-          # Copy resource files
-          echo "Copying resources..."
-          if [ -d "resources" ]; then
-            cp -rf resources build/ || echo "Warning: Failed to copy resources directory"
-          else
-            echo "WARNING: Resources directory not found in project root"
-            find . -name "resources" -type d | head -5
-          fi
-          
-          echo "Creating Qt configuration file..."
-          cat > build/qt.conf << EOF
-          [Paths]
-          Prefix = .
-          Plugins = .
-          Imports = ./imports
-          Qml2Imports = ./qml
-          EOF
-          
-          echo "Listing the files copied to build directory:"
+          echo "Deployed Windows build contents:"
           ls -la build/
-          echo "Listing platform plugins:"
-          ls -la build/platforms/ || echo "No platform plugins found!"
-          
-          echo "DLL and plugin copying completed."
 
       - name: Archive build artifacts
         uses: actions/upload-artifact@v4

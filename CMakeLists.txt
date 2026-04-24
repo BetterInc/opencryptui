@@ -136,9 +136,17 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     target_link_libraries(EncryptionLib PRIVATE ${SECURITY_FRAMEWORK})
 endif()
 
-# Create the main executable and link against the library
-add_executable(OpenCryptUI WIN32 src/main.cpp)
-set_target_properties(OpenCryptUI PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Create the main executable and link against the library.
+# WIN32 → no console window on Windows.
+# MACOSX_BUNDLE → produce a proper OpenCryptUI.app on macOS so macdeployqt
+# can embed Qt frameworks + plugins and the result runs on other Macs.
+add_executable(OpenCryptUI WIN32 MACOSX_BUNDLE src/main.cpp)
+set_target_properties(OpenCryptUI PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.opencryptui.OpenCryptUI"
+    MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+)
 
 target_compile_options(OpenCryptUI PRIVATE -fPIC)
 
