@@ -264,11 +264,44 @@ target_link_libraries(TestRoundtrip PRIVATE
     sodium
 )
 
+# Helper macro: compile an engine-level test (no UI). One .cpp, one
+# executable, one CTest entry. Matches the TestRoundtrip pattern so
+# every engine test gets the same includes and links.
+function(add_engine_test name source)
+    add_executable(${name} ${source})
+    set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_compile_definitions(${name} PRIVATE -DTEST_MODE -DENABLE_LOGGING)
+    target_include_directories(${name} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/logging
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${Qt5Core_INCLUDE_DIRS}
+        ${OPENSSL_INCLUDE_DIR}
+        ${SODIUM_INCLUDE_DIRS}
+        ${SODIUM_INCLUDE_DIR}
+        ${ARGON2_INCLUDE_DIRS}
+        ${ARGON2_INCLUDE_DIR}
+    )
+    target_link_libraries(${name} PRIVATE
+        EncryptionLib
+        Qt5::Core Qt5::Gui Qt5::Widgets
+        OpenSSL::SSL OpenSSL::Crypto
+        argon2 sodium
+    )
+endfunction()
+
+add_engine_test(TestEngineTamper    tests/test_engine_tamper.cpp)
+add_engine_test(TestEngineDowngrade tests/test_engine_downgrade.cpp)
+add_engine_test(TestEngineKeyfile   tests/test_engine_keyfile.cpp)
+
 # Add tests to CTest
 enable_testing()
-add_test(NAME OpenCryptUITest COMMAND OpenCryptUITest)
-add_test(NAME TestRoundtripGCM COMMAND TestRoundtrip AES-256-GCM)
-add_test(NAME TestRoundtripCBC COMMAND TestRoundtrip AES-256-CBC)
+add_test(NAME OpenCryptUITest     COMMAND OpenCryptUITest)
+add_test(NAME TestRoundtripGCM    COMMAND TestRoundtrip AES-256-GCM)
+add_test(NAME TestRoundtripCBC    COMMAND TestRoundtrip AES-256-CBC)
+add_test(NAME EngineTamper        COMMAND TestEngineTamper)
+add_test(NAME EngineDowngrade     COMMAND TestEngineDowngrade)
+add_test(NAME EngineKeyfile       COMMAND TestEngineKeyfile)
 
 # Copy test runner scripts
 configure_file(
