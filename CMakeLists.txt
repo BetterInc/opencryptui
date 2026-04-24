@@ -81,6 +81,7 @@ set(LIBRARY_SOURCES
     src/encryptionengine_tables.cpp
     src/encryptionengine_disk.cpp
     src/encryptionengine_diskops.cpp
+    src/encryptionengine_diskops_header.cpp
     src/encryptionengine_tamperevidence.cpp
     src/encryptionengine_securewipe.cpp
     include/encryptionengine.h
