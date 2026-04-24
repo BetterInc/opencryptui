@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QPushButton>
+#include <openssl/evp.h>
 #include <openssl/rand.h>
 
 using namespace DiskOperations;
@@ -204,15 +205,15 @@ void EncryptionWorker::runBenchmark() {
 
 void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &kdf, bool useHardwareAcceleration) {
     if (kdf != "PBKDF2" && kdf != "Argon2" && kdf != "Scrypt") {
-        SECURE_LOG(WARNING, "EncryptionWorker", 
+        SECURE_LOG(WARNING, "EncryptionWorker",
             QString("Skipping unknown KDF: %1").arg(kdf));
         return;
     }
 
     // Use a smaller buffer size for benchmarking to avoid memory issues
-    // 10MB is sufficient for benchmarking and less likely to cause memory pressure
-    const int dataSize = 10 * 1024 * 1024; // 10 MB instead of 100 MB
-    
+    // 1MB is sufficient for benchmarking throughput measurement
+    const int dataSize = 1 * 1024 * 1024; // 1 MB
+
     // Only allocate the memory if we can
     QByteArray testData;
     try {
@@ -222,11 +223,21 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
         SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", "Memory allocation failed for benchmark data");
         return;
     }
-    
+
     QByteArray key(32, 'K');
-    QByteArray iv(16, 'I');
-    QByteArray salt(16, 'S');
-    int iterations = 10;
+    // IV must be 12 bytes for GCM / ChaCha20-Poly1305 (96-bit nonce per NIST SP 800-38D)
+    // and 16 bytes for CBC / CTR / Camellia modes.
+    // Using a wrong IV size for GCM causes crypto_pwhash / EVP_EncryptInit internal
+    // state corruption that leads to a segfault in EVP_EncryptUpdate.
+    const int ivSize = algorithm.contains("GCM") || algorithm == "ChaCha20-Poly1305" ? 12 : 16;
+    QByteArray iv(ivSize, 'I');
+    // salt must be exactly 32 bytes: libsodium's crypto_pwhash_scryptsalsa208sha256
+    // reads SALTBYTES (32) unconditionally — a shorter buffer is a heap overread.
+    QByteArray salt(32, 'S');
+    // Use minimum viable iterations per KDF so the benchmark finishes quickly
+    // and does not allocate enormous amounts of RAM (Argon2 uses 1 GiB at m_cost=1<<20).
+    // PBKDF2 floor is enforced by calculateSecureIterations, so pass the floor directly.
+    int iterations = (kdf == "PBKDF2") ? 600000 : (kdf == "Argon2") ? 3 : 16384;
 
     QElapsedTimer timer;
     timer.start();
@@ -254,12 +265,40 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
         return;
     }
 
-    if (!EVP_EncryptInit_ex(ctx, cipher, nullptr,
-                            reinterpret_cast<const unsigned char *>(key.data()),
-                            reinterpret_cast<const unsigned char *>(iv.data()))) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", "EVP_EncryptInit_ex failed");
-        EVP_CIPHER_CTX_free(ctx);
-        return;
+    // For GCM / ChaCha20-Poly1305 the OpenSSL default IV length is 12 bytes.
+    // We must initialise the cipher *without* the IV first, then set the IV
+    // length explicitly via ctrl before providing the key+IV.  Skipping this
+    // step and passing a mismatched IV length directly to EVP_EncryptInit_ex
+    // corrupts the internal GCM state and causes a segfault in EVP_EncryptUpdate.
+    if (ivSize != 16) {
+        // Phase 1: load cipher and engine only (key=nullptr, iv=nullptr)
+        if (!EVP_EncryptInit_ex(ctx, cipher, nullptr, nullptr, nullptr)) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", "EVP_EncryptInit_ex (cipher only) failed");
+            EVP_CIPHER_CTX_free(ctx);
+            return;
+        }
+        // Phase 2: set the IV length
+        if (!EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, ivSize, nullptr)) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", "EVP_CTRL_GCM_SET_IVLEN failed");
+            EVP_CIPHER_CTX_free(ctx);
+            return;
+        }
+        // Phase 3: provide key + IV
+        if (!EVP_EncryptInit_ex(ctx, nullptr, nullptr,
+                                reinterpret_cast<const unsigned char *>(key.data()),
+                                reinterpret_cast<const unsigned char *>(iv.data()))) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", "EVP_EncryptInit_ex (key+iv) failed");
+            EVP_CIPHER_CTX_free(ctx);
+            return;
+        }
+    } else {
+        if (!EVP_EncryptInit_ex(ctx, cipher, nullptr,
+                                reinterpret_cast<const unsigned char *>(key.data()),
+                                reinterpret_cast<const unsigned char *>(iv.data()))) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", "EVP_EncryptInit_ex failed");
+            EVP_CIPHER_CTX_free(ctx);
+            return;
+        }
     }
 
     // Only allocate the ciphertext buffer if we can
