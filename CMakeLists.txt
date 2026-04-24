@@ -70,6 +70,9 @@ qt5_add_resources(RESOURCES resources/resources.qrc)
 # Library sources
 set(LIBRARY_SOURCES
     src/mainwindow.cpp
+    src/mainwindow_menu.cpp
+    src/mainwindow_preferences.cpp
+    src/mainwindow_fileops.cpp
     include/mainwindow.h
     src/mainwindow_disk.cpp
     src/mainwindow_entropy.cpp
