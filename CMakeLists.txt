@@ -290,18 +290,22 @@ function(add_engine_test name source)
     )
 endfunction()
 
-add_engine_test(TestEngineTamper    tests/test_engine_tamper.cpp)
-add_engine_test(TestEngineDowngrade tests/test_engine_downgrade.cpp)
-add_engine_test(TestEngineKeyfile   tests/test_engine_keyfile.cpp)
+add_engine_test(TestEngineTamper        tests/test_engine_tamper.cpp)
+add_engine_test(TestEngineDowngrade     tests/test_engine_downgrade.cpp)
+add_engine_test(TestEngineKeyfile       tests/test_engine_keyfile.cpp)
+add_engine_test(TestEngineCipherMatrix  tests/test_engine_cipher_matrix.cpp)
+add_engine_test(TestEngineKdf           tests/test_engine_kdf.cpp)
 
 # Add tests to CTest
 enable_testing()
-add_test(NAME OpenCryptUITest     COMMAND OpenCryptUITest)
-add_test(NAME TestRoundtripGCM    COMMAND TestRoundtrip AES-256-GCM)
-add_test(NAME TestRoundtripCBC    COMMAND TestRoundtrip AES-256-CBC)
-add_test(NAME EngineTamper        COMMAND TestEngineTamper)
-add_test(NAME EngineDowngrade     COMMAND TestEngineDowngrade)
-add_test(NAME EngineKeyfile       COMMAND TestEngineKeyfile)
+add_test(NAME OpenCryptUITest       COMMAND OpenCryptUITest)
+add_test(NAME TestRoundtripGCM      COMMAND TestRoundtrip AES-256-GCM)
+add_test(NAME TestRoundtripCBC      COMMAND TestRoundtrip AES-256-CBC)
+add_test(NAME EngineTamper          COMMAND TestEngineTamper)
+add_test(NAME EngineDowngrade       COMMAND TestEngineDowngrade)
+add_test(NAME EngineKeyfile         COMMAND TestEngineKeyfile)
+add_test(NAME EngineCipherMatrix    COMMAND TestEngineCipherMatrix)
+add_test(NAME EngineKdf             COMMAND TestEngineKdf)
 
 # Copy test runner scripts
 configure_file(

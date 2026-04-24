@@ -611,6 +611,13 @@ bool TestOpenCryptUI::encryptAndDecrypt(const QString &cipher, const QString &kd
 
 void TestOpenCryptUI::testAllCiphersAndKDFs()
 {
+    // Cipher-matrix coverage now lives in tests/test_engine_cipher_matrix.cpp
+    // (CTest: EngineCipherMatrix). That runs every supportedCiphers() entry
+    // through a real encrypt→decrypt round-trip at the engine API — no UI
+    // widget dance, no headless flake. Skip the UI variant and rely on the
+    // engine-level test as the source of truth.
+    QSKIP("Covered by EngineCipherMatrix (engine-level, faster + deterministic)");
+
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Starting testAllCiphersAndKDFs");
 
     // Switch to the file encryption tab if needed
@@ -1820,6 +1827,12 @@ void TestOpenCryptUI::testEntropyQuality()
 
 void TestOpenCryptUI::testKeyDerivation()
 {
+    // Key-derivation coverage (determinism, salt independence, PBKDF2 floor,
+    // KDF separation) now lives in tests/test_engine_kdf.cpp (CTest:
+    // EngineKdf). The engine-level test is faster and doesn't drag in
+    // UI bootstrapping.
+    QSKIP("Covered by EngineKdf (engine-level, faster + deterministic)");
+
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Starting key derivation test");
 
     // Test multiple KDF algorithms with the same password and salt
