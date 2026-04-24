@@ -202,23 +202,35 @@ jobs:
           # windeployqt is the official Qt tool for bundling DLLs + plugins.
           # It replaces the previous hand-rolled ntldd/find/cp loop, which
           # was fragile to Qt/MSYS2 updates (DLL name suffixes kept drifting).
+          #
+          # MSYS2 ships the Qt5 variant as windeployqt-qt5.exe so Qt5 and Qt6
+          # can coexist. Probe for that name first, fall back to the plain name
+          # for any future layout that reverts, and fail loudly if neither exists.
+          WDQT="$(command -v windeployqt-qt5 || command -v windeployqt || true)"
+          if [ -z "$WDQT" ]; then
+            echo "ERROR: no windeployqt found on PATH"
+            ls /mingw64/bin/*deployqt* 2>/dev/null || true
+            exit 1
+          fi
+          echo "Using windeployqt: $WDQT"
+
           if [ ! -f build/OpenCryptUI.exe ]; then
             echo "ERROR: build/OpenCryptUI.exe not found"
             ls -la build/
             exit 1
           fi
-          /mingw64/bin/windeployqt.exe --release --no-translations --no-system-d3d-compiler \
+          "$WDQT" --release --no-translations --no-system-d3d-compiler \
             --no-opengl-sw --compiler-runtime build/OpenCryptUI.exe
 
           # Also deploy the test executable — it links Qt5::Test and would
           # otherwise fail to start silently (exit 1, no stderr) because
           # Qt5Test.dll isn't a dep of OpenCryptUI.exe.
           if [ -f build/OpenCryptUITest.exe ]; then
-            /mingw64/bin/windeployqt.exe --release --no-translations --no-system-d3d-compiler \
+            "$WDQT" --release --no-translations --no-system-d3d-compiler \
               --no-opengl-sw build/OpenCryptUITest.exe
           fi
           if [ -f build/TestRoundtrip.exe ]; then
-            /mingw64/bin/windeployqt.exe --release --no-translations --no-system-d3d-compiler \
+            "$WDQT" --release --no-translations --no-system-d3d-compiler \
               --no-opengl-sw build/TestRoundtrip.exe
           fi
 
