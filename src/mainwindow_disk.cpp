@@ -12,7 +12,18 @@
 #include <QDebug>
 #include <QSettings>
 #include <QListWidget>
-#include <unistd.h> // For geteuid() on Linux/Unix
+
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#  include <shellapi.h>
+#else
+#  include <unistd.h> // geteuid() on Linux/macOS
+#endif
+
+#ifdef Q_OS_MAC
+#  include <Security/Authorization.h>
+#  include <Security/AuthorizationTags.h>
+#endif
 
 // Define the disk header magic strings
 #define DISK_HEADER_MAGIC "OPENCRYPT_DISK_HDR"
