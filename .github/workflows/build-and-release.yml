@@ -9,6 +9,7 @@ on:
   pull_request:
     branches:
       - '**'   # Runs the build for all pull requests
+  workflow_dispatch:   # Allow manual re-runs from the Actions tab
 
 permissions:
   contents: write
@@ -19,6 +20,7 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false   # Don't cancel other OS jobs when one fails
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
@@ -359,9 +361,10 @@ jobs:
 
       - name: Run tests (Linux)
         if: matrix.os == 'ubuntu-latest'
+        shell: bash
         run: |
+          set -o pipefail
           sudo apt-get install -y xvfb
-          xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24" cmake --build build --target all
           cd build
           mkdir -p Testing/Temporary
           chmod +x run_tests.sh
@@ -370,46 +373,51 @@ jobs:
 
       - name: Run tests (macOS)
         if: matrix.os == 'macos-latest'
+        shell: bash
         run: |
-          cmake --build build --target all
+          set -o pipefail
           cd build
           mkdir -p Testing/Temporary
-          # Copy macOS-specific test script
-          cp ../scripts/run_tests_mac.sh .
+          # CMake already configures run_tests_mac.sh into build/ on APPLE;
+          # copy again defensively in case the configure_file path changes.
+          if [ ! -f run_tests_mac.sh ]; then
+            cp ../scripts/run_tests_mac.sh .
+          fi
           chmod +x run_tests_mac.sh
           echo "Running tests with filtered output..."
           ./run_tests_mac.sh -v2 | tee Testing/Temporary/LastTest.log
 
       - name: Run tests (Windows)
         if: matrix.os == 'windows-latest'
-        shell: cmd
+        shell: pwsh
         run: |
-          cd build
-          
-          echo "Directory contents of build:"
-          dir
-          
-          if not exist Testing\Temporary mkdir Testing\Temporary
-          
-          echo "Running tests with filtered output..."
-          
-          if exist run_tests.bat (
-            echo "Found run_tests.bat, running tests..."
-            run_tests.bat -v2
-            rem Save output to a log file for artifacts
-            run_tests.bat -v2 > Testing\Temporary\LastTest.log 2>&1
-          ) else if exist OpenCryptUITest.exe (
-            echo "run_tests.bat not found, running executable directly..."
-            set QT_LOGGING_RULES=*.debug=false
-            set QT_MESSAGE_PATTERN=[%%{type}] %%{message}
-            OpenCryptUITest.exe -v2
-            rem Save output to a log file for artifacts
-            OpenCryptUITest.exe -v2 > Testing\Temporary\LastTest.log 2>&1
-          ) else (
-            echo "ERROR: Test executable not found!"
-            dir
+          Set-Location build
+
+          Write-Host "Directory contents of build:"
+          Get-ChildItem
+
+          New-Item -ItemType Directory -Force -Path Testing\Temporary | Out-Null
+
+          Write-Host "Running tests with filtered output..."
+
+          $env:QT_LOGGING_RULES = "*.debug=false"
+          $env:QT_MESSAGE_PATTERN = "[%{type}] %{message}"
+
+          if (Test-Path run_tests.bat) {
+            Write-Host "Found run_tests.bat, running tests..."
+            & cmd /c "run_tests.bat -v2" 2>&1 | Tee-Object -FilePath Testing\Temporary\LastTest.log
+            $exit = $LASTEXITCODE
+          } elseif (Test-Path OpenCryptUITest.exe) {
+            Write-Host "run_tests.bat not found, running executable directly..."
+            & .\OpenCryptUITest.exe -v2 2>&1 | Tee-Object -FilePath Testing\Temporary\LastTest.log
+            $exit = $LASTEXITCODE
+          } else {
+            Write-Host "ERROR: Test executable not found!"
+            Get-ChildItem
             exit 1
-          )
+          }
+
+          exit $exit
 
       # Upload test results
       - name: Upload test results
