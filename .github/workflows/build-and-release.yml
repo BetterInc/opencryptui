@@ -210,6 +210,18 @@ jobs:
           /mingw64/bin/windeployqt.exe --release --no-translations --no-system-d3d-compiler \
             --no-opengl-sw --compiler-runtime build/OpenCryptUI.exe
 
+          # Also deploy the test executable — it links Qt5::Test and would
+          # otherwise fail to start silently (exit 1, no stderr) because
+          # Qt5Test.dll isn't a dep of OpenCryptUI.exe.
+          if [ -f build/OpenCryptUITest.exe ]; then
+            /mingw64/bin/windeployqt.exe --release --no-translations --no-system-d3d-compiler \
+              --no-opengl-sw build/OpenCryptUITest.exe
+          fi
+          if [ -f build/TestRoundtrip.exe ]; then
+            /mingw64/bin/windeployqt.exe --release --no-translations --no-system-d3d-compiler \
+              --no-opengl-sw build/TestRoundtrip.exe
+          fi
+
           # windeployqt covers Qt + its transitive deps, but not third-party
           # libs we link directly (sodium, argon2, openssl). Copy those by
           # pattern — no version suffix guessing.
