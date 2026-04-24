@@ -219,19 +219,41 @@ jobs:
             ls -la build/
             exit 1
           fi
-          "$WDQT" --release --no-translations --no-system-d3d-compiler \
-            --no-opengl-sw --no-angle --compiler-runtime build/OpenCryptUI.exe
 
-          # Also deploy the test executable — it links Qt5::Test and would
-          # otherwise fail to start silently (exit 1, no stderr) because
-          # Qt5Test.dll isn't a dep of OpenCryptUI.exe.
+          # Shared flag set.  We deliberately suppress every runtime that the
+          # app doesn't actually use so windeployqt doesn't try to bundle a
+          # DLL that MSYS2's Qt5 build doesn't ship. Past incidents:
+          #   - libGLESv2.dll missing → --no-angle
+          #   - opengl32sw.dll missing → --no-opengl-sw
+          #   - D3DCompiler_*.dll missing → --no-system-d3d-compiler
+          # We don't use QML or Qt VirtualKeyboard — skip those too.
+          WDQT_FLAGS=(
+            --release
+            --no-translations
+            --no-system-d3d-compiler
+            --no-opengl-sw
+            --no-angle
+            --no-virtualkeyboard
+            --no-quick-import
+          )
+
+          # --dry-run first so the log shows what windeployqt WOULD copy.
+          # If a future dep trips deployment, this makes the offender obvious
+          # before the real run aborts.
+          echo "=== windeployqt dry-run for OpenCryptUI.exe ==="
+          "$WDQT" --dry-run "${WDQT_FLAGS[@]}" --compiler-runtime build/OpenCryptUI.exe || true
+
+          echo "=== windeployqt real run ==="
+          "$WDQT" "${WDQT_FLAGS[@]}" --compiler-runtime build/OpenCryptUI.exe
+
+          # Test executables — they link Qt5::Test and would otherwise fail to
+          # start silently (exit 1, no stderr) because Qt5Test.dll isn't a
+          # direct dep of OpenCryptUI.exe.
           if [ -f build/OpenCryptUITest.exe ]; then
-            "$WDQT" --release --no-translations --no-system-d3d-compiler \
-              --no-opengl-sw --no-angle build/OpenCryptUITest.exe
+            "$WDQT" "${WDQT_FLAGS[@]}" build/OpenCryptUITest.exe
           fi
           if [ -f build/TestRoundtrip.exe ]; then
-            "$WDQT" --release --no-translations --no-system-d3d-compiler \
-              --no-opengl-sw --no-angle build/TestRoundtrip.exe
+            "$WDQT" "${WDQT_FLAGS[@]}" build/TestRoundtrip.exe
           fi
 
           # windeployqt covers Qt + its transitive deps, but not third-party
