@@ -199,6 +199,10 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 set(TEST_SOURCES
     tests/main.cpp
     tests/test_encryption_app.cpp
+    tests/test_ui_encrypt_decrypt.cpp
+    tests/test_ui_smoke.cpp
+    tests/test_ui_tamper.cpp
+    tests/test_ui_common.h
 )
 
 # Create test executable
