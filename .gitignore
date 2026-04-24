@@ -3,3 +3,8 @@ build/
 Testing/
 version.h
 CLAUDE.md
+
+# Leftovers from test runs (if they crash before cleanup)
+test_folder_encrypt_decrypt/
+test_folder_encrypt_decrypt_original_copy/
+hidden_volume_test/
