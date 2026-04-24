@@ -197,7 +197,7 @@ target_compile_definitions(OpenCryptUITest PRIVATE
     -DENABLE_LOGGING
 )
 
-target_include_directories(OpenCryptUITest PRIVATE 
+target_include_directories(OpenCryptUITest PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/ui
@@ -205,6 +205,13 @@ target_include_directories(OpenCryptUITest PRIVATE
     ${Qt5Gui_INCLUDE_DIRS}
     ${Qt5Widgets_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
+    # Needed on macOS (Homebrew) and Windows (MSYS2) where sodium/argon2
+    # headers aren't on the default search path. Linux picks them up from
+    # /usr/include but listing them here is harmless.
+    ${SODIUM_INCLUDE_DIRS}
+    ${SODIUM_INCLUDE_DIR}
+    ${ARGON2_INCLUDE_DIRS}
+    ${ARGON2_INCLUDE_DIR}
 )
 
 target_link_libraries(OpenCryptUITest PRIVATE 
@@ -233,6 +240,10 @@ target_include_directories(TestRoundtrip PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${Qt5Core_INCLUDE_DIRS}
     ${OPENSSL_INCLUDE_DIR}
+    ${SODIUM_INCLUDE_DIRS}
+    ${SODIUM_INCLUDE_DIR}
+    ${ARGON2_INCLUDE_DIRS}
+    ${ARGON2_INCLUDE_DIR}
 )
 target_link_libraries(TestRoundtrip PRIVATE
     EncryptionLib

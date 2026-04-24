@@ -1074,6 +1074,14 @@ void TestOpenCryptUI::testVirtualDiskEncryption()
 {
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Starting virtual disk encryption test with real progress tracking");
 
+    // Same reason as testHiddenVolumeEncryption: the virtual-disk UI flow
+    // runs on a worker thread and polls for an output file. Even with a
+    // 128 KB image, the headless (offscreen) event loop doesn't make steady
+    // progress and the test eats 40+ seconds per run before its internal
+    // fallback SKIPs it. Skip up front so the suite stays fast.
+    // Engine-level disk logic should be covered by a dedicated non-UI test.
+    QSKIP("Virtual-disk UI flow is not exercised in headless CI");
+
     // Switch to disk tab
     switchToTab("Disk");
 
