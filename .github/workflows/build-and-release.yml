@@ -310,30 +310,63 @@ jobs:
         run: |
           Set-Location build
 
-          Write-Host "Directory contents of build:"
+          Write-Host "=== build/ contents ==="
           Get-ChildItem
+
+          foreach ($sub in @('platforms','imageformats','styles','iconengines','printsupport')) {
+            if (Test-Path $sub) {
+              Write-Host "=== $sub/ ==="
+              Get-ChildItem $sub
+            } else {
+              Write-Host "NOTE: $sub/ does not exist"
+            }
+          }
 
           New-Item -ItemType Directory -Force -Path Testing\Temporary | Out-Null
 
-          Write-Host "Running tests with filtered output..."
+          # QT_DEBUG_PLUGINS dumps every plugin/DLL Qt searches for on startup —
+          # if a plugin is missing or the platforms directory isn't discoverable
+          # this is where it shows up. Previous silent `exit 1` runs had zero
+          # stderr because Windows eats load-time DLL errors in non-interactive
+          # sessions. Let stderr flow to console + log.
+          $env:QT_DEBUG_PLUGINS    = "1"
+          $env:QT_LOGGING_RULES    = "*.debug=false"
+          $env:QT_MESSAGE_PATTERN  = "[%{type}] %{message}"
+          # Tell Qt to use the offscreen platform for headless CI; the
+          # Windows runner has no interactive session. `minimal` also works
+          # but offscreen is closer to what Linux uses.
+          $env:QT_QPA_PLATFORM     = "minimal"
 
-          $env:QT_LOGGING_RULES = "*.debug=false"
-          $env:QT_MESSAGE_PATTERN = "[%{type}] %{message}"
+          Write-Host "=== Environment ==="
+          Write-Host "QT_QPA_PLATFORM=$env:QT_QPA_PLATFORM"
+          Write-Host "QT_DEBUG_PLUGINS=$env:QT_DEBUG_PLUGINS"
+          Write-Host "PWD=$(Get-Location)"
 
-          if (Test-Path run_tests.bat) {
-            Write-Host "Found run_tests.bat, running tests..."
-            & cmd /c "run_tests.bat -v2" 2>&1 | Tee-Object -FilePath Testing\Temporary\LastTest.log
-            $exit = $LASTEXITCODE
-          } elseif (Test-Path OpenCryptUITest.exe) {
-            Write-Host "run_tests.bat not found, running executable directly..."
-            & .\OpenCryptUITest.exe -v2 2>&1 | Tee-Object -FilePath Testing\Temporary\LastTest.log
-            $exit = $LASTEXITCODE
-          } else {
+          if (-not (Test-Path OpenCryptUITest.exe)) {
             Write-Host "ERROR: Test executable not found!"
             Get-ChildItem
             exit 1
           }
 
+          Write-Host "=== Loader deps for OpenCryptUITest.exe (best effort) ==="
+          # ntldd was installed via mingw-w64-x86_64-ntldd — use it to show
+          # exactly which DLLs the test exe will ask for at load time.
+          $ntldd = "$env:RUNNER_TEMP\msys64\mingw64\bin\ntldd.exe"
+          if (-not (Test-Path $ntldd)) { $ntldd = "C:\msys64\mingw64\bin\ntldd.exe" }
+          if (Test-Path $ntldd) {
+            & $ntldd -R OpenCryptUITest.exe 2>&1 | Select-Object -First 40
+          } else {
+            Write-Host "NOTE: ntldd not found on either probe path"
+          }
+
+          Write-Host "=== Running OpenCryptUITest.exe -v2 ==="
+          # Call the exe directly rather than via run_tests.bat so any stderr
+          # is captured in the pipeline. Qt will print its plugin-search log
+          # to stderr under QT_DEBUG_PLUGINS=1, and that's exactly what we
+          # want to see on failure.
+          & .\OpenCryptUITest.exe -v2 2>&1 | Tee-Object -FilePath Testing\Temporary\LastTest.log
+          $exit = $LASTEXITCODE
+          Write-Host "=== OpenCryptUITest.exe exit code: $exit ==="
           exit $exit
 
       # Upload test results
