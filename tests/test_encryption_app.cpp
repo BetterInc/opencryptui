@@ -1546,11 +1546,9 @@ void TestOpenCryptUI::testEncryptDecryptWithKeyfile()
     QFile decryptedFile(testFilePath);
     QVERIFY(decryptedFile.open(QIODevice::ReadOnly));
     QByteArray contentBytes = decryptedFile.readAll();
-    QString decryptedContent = QString::fromUtf8(contentBytes.left(13));
-    decryptedFile.close();
-
-    // Check if the content matches (or starts with) the expected text
     QString expectedText = "test with keyfile";
+    QString decryptedContent = QString::fromUtf8(contentBytes.left(expectedText.size()));
+    decryptedFile.close();
 
     SECURE_LOG(DEBUG, "TestOpenCryptUI", QString("Decrypted file content (first %1 bytes): %2").arg(expectedText.length()).arg(decryptedContent));
     SECURE_LOG(DEBUG, "TestOpenCryptUI", QString("Full content length: %1").arg(contentBytes.size()));

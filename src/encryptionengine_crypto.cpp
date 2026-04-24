@@ -6,6 +6,7 @@
 #include <QDataStream>
 #include <QStandardPaths>
 #include <QDir>
+#include <QScopeGuard>
 #include <openssl/rand.h>
 #include <openssl/evp.h>
 #include <sodium.h>
@@ -45,6 +46,20 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         return false;
     }
 
+    QByteArray key;
+    bool success = false;
+    auto cleanup = qScopeGuard([&]() {
+        if (inputFile.isOpen()) inputFile.close();
+        if (outputFile.isOpen()) outputFile.close();
+        // Never leave partial plaintext (or partial ciphertext) on disk after a failed run.
+        if (!success) {
+            QFile::remove(outputPath);
+        }
+        if (!key.isEmpty()) {
+            sodium_memzero(key.data(), key.size());
+        }
+    });
+
     // Generate salt and IV or read them from encrypted file
     QByteArray salt(32, 0);
     QByteArray iv(16, 0); // Most algorithms use 16 bytes
@@ -56,8 +71,6 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         if (salt.isEmpty())
         {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to generate salt");
-            inputFile.close();
-            outputFile.close();
             return false;
         }
 
@@ -65,8 +78,6 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         if (iv.isEmpty())
         {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to generate IV");
-            inputFile.close();
-            outputFile.close();
             return false;
         }
 
@@ -84,8 +95,6 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
             if (!inputFile.seek(headerSize))
             {
                 SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to seek past header in input file");
-                inputFile.close();
-                outputFile.close();
                 return false;
             }
         }
@@ -95,8 +104,6 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
             if (!inputFile.seek(0))
             {
                 SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to seek to beginning of input file");
-                inputFile.close();
-                outputFile.close();
                 return false;
             }
         }
@@ -105,8 +112,6 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         if (inputFile.read(salt.data(), salt.size()) != salt.size())
         {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read salt from input file");
-            inputFile.close();
-            outputFile.close();
             return false;
         }
 
@@ -114,8 +119,6 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         if (inputFile.read(iv.data(), iv.size()) != iv.size())
         {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read IV from input file");
-            inputFile.close();
-            outputFile.close();
             return false;
         }
 
@@ -126,17 +129,13 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
     // Removed storage of IV in class member for security reasons
 
     // Derive key using the password and keyfiles
-    QByteArray key = deriveKey(password, salt, keyfilePaths, kdf, iterations);
+    key = deriveKey(password, salt, keyfilePaths, kdf, iterations);
 
     if (key.isEmpty())
     {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Key derivation failed");
-        inputFile.close();
-        outputFile.close();
         return false;
     }
-
-    bool success = false;
 
     // Special handling for AEAD ciphers (avoid double authentication and potental conflicts)
     bool isAEADCipher = algorithm.contains("GCM") || algorithm.contains("CCM") || 
@@ -165,8 +164,6 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         if (!inputFile.seek(0))
         {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to seek to beginning of input file before encryption");
-            inputFile.close();
-            outputFile.close();
             return false;
         }
 
@@ -251,7 +248,16 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
                 signatureCheckFile.close();
             }
         }
-        
+
+        // Abort before any plaintext can be written when integrity is enforced
+        // and the signature did not verify. The cleanup guard removes the
+        // (empty) output file so no partial plaintext is ever observable.
+        if (hasSignature && !validSignature && enforceIntegrity) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                "Integrity check failed: digital signature did not verify - aborting decryption");
+            return false;
+        }
+
         // Make sure we're at the correct position for decryption
         inputFile.seek(decryptionStartPos);
         
@@ -327,19 +333,9 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
             // No signature detected, do normal decryption
             success = m_currentProvider->decrypt(inputFile, outputFile, key, iv, algorithm, useHMAC || enforceIntegrity);
         }
-        
-        // If signature validation failed, warn but still allow decryption to proceed
-        if (hasSignature && !validSignature && enforceIntegrity) {
-            SECURE_LOG(WARNING, "EncryptionEngine", "Digital signature validation failed - file may have been tampered with");
-        }
     }
 
-    inputFile.close();
-    outputFile.close();
-
-    // Securely clear sensitive data with constant-time operation
-    sodium_memzero(key.data(), key.size());
-    
+    // File close, partial-output removal, and key zeroization are handled by the cleanup guard above.
     return success;
 }
 

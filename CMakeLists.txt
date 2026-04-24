@@ -37,9 +37,8 @@ endif()
 find_package(OpenSSL REQUIRED)
 
 # Find Argon2 and Sodium (Scrypt) packages
-find_package(PkgConfig REQUIRED)
-
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_package(PkgConfig REQUIRED)
     pkg_search_module(ARGON2 REQUIRED libargon2)
     pkg_search_module(SODIUM REQUIRED libsodium)
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
@@ -176,9 +175,6 @@ add_custom_command(
 
 # Add custom target to ensure version.h is generated
 add_custom_target(GenerateVersionHeader ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/version.h)
-
-# Ensure GenerateVersionHeader is built before the main executable
-add_dependencies(OpenCryptUI GenerateVersionHeader)
 
 # Include version.h
 include_directories(${CMAKE_CURRENT_BINARY_DIR})

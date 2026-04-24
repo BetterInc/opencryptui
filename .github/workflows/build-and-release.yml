@@ -14,7 +14,6 @@ on:
 permissions:
   contents: write
   packages: write
-  deployments: write
 
 jobs:
   build:
@@ -50,12 +49,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build git qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libssl-dev libsodium-dev libargon2-dev
-
-      - name: Install Homebrew (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || { echo "Homebrew installation failed"; exit 1; }
+          sudo apt-get install -y build-essential cmake ninja-build git qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools libssl-dev libsodium-dev libargon2-dev xvfb
 
       - name: Install dependencies (macOS)
         if: matrix.os == 'macos-latest'
@@ -94,6 +88,7 @@ jobs:
             mingw-w64-x86_64-argon2
             mingw-w64-x86_64-qt5-base
             mingw-w64-x86_64-qt5-tools
+            mingw-w64-x86_64-python
             cmake
             gcc
             mingw-w64-x86_64-ntldd
@@ -364,7 +359,6 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          sudo apt-get install -y xvfb
           cd build
           mkdir -p Testing/Temporary
           chmod +x run_tests.sh
