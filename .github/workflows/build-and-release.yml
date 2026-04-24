@@ -256,19 +256,58 @@ jobs:
             "$WDQT" "${WDQT_FLAGS[@]}" build/TestRoundtrip.exe
           fi
 
-          # windeployqt covers Qt + its transitive deps, but not third-party
-          # libs we link directly (sodium, argon2, openssl). Copy those by
-          # pattern — no version suffix guessing.
+          # MSYS2's windeployqt-qt5 reliably copies Qt's plugin tree
+          # (platforms/, imageformats/, styles/, …) but does NOT copy
+          # transitive native deps like libpcre2-16-0.dll, libharfbuzz-0.dll,
+          # libicu*.dll, libpng16-16.dll, libfreetype-6.dll, libzstd.dll,
+          # libbz2-1.dll, libiconv-2.dll, libglib-2.0-0.dll, libgraphite2.dll,
+          # libintl-8.dll, libdouble-conversion.dll, libbrotli*.dll,
+          # libmd4c.dll.  Without those, Qt5Core.dll can't load and the exe
+          # dies at load time with STATUS_DLL_NOT_FOUND (exit 0xC0000135).
+          #
+          # Walk every .exe's dependency graph with ntldd and copy every
+          # mingw DLL it references.  Applies to OpenCryptUI + all test exes.
+          NTLDD=/mingw64/bin/ntldd.exe
+          if [ ! -x "$NTLDD" ]; then
+            echo "ERROR: ntldd missing from /mingw64/bin — can't resolve transitive deps"
+            exit 1
+          fi
+
+          collect_deps() {
+            local exe="$1"
+            if [ ! -f "$exe" ]; then return 0; fi
+            echo "Resolving deps for $exe ..."
+            "$NTLDD" -R "$exe" | awk '/=>/ && /mingw/ && !/not found/ {print $3}' | sort -u
+          }
+
+          DEP_LIST="$(mktemp)"
+          trap "rm -f $DEP_LIST" EXIT
+          for exe in build/OpenCryptUI.exe build/OpenCryptUITest.exe \
+                     build/TestRoundtrip.exe build/TestEngineTamper.exe \
+                     build/TestEngineDowngrade.exe build/TestEngineKeyfile.exe \
+                     build/TestEngineCipherMatrix.exe build/TestEngineKdf.exe; do
+            collect_deps "$exe" >> "$DEP_LIST"
+          done
+          sort -u "$DEP_LIST" -o "$DEP_LIST"
+
+          echo "=== Copying $(wc -l < $DEP_LIST) unique mingw DLLs into build/ ==="
+          while IFS= read -r dll; do
+            [ -f "$dll" ] && cp -f "$dll" build/ && echo "  $(basename "$dll")"
+          done < "$DEP_LIST"
+
+          # Third-party libs we link directly (sodium/argon2/openssl). ntldd
+          # should already have caught these, but be explicit in case of a
+          # static-link edge case.
           for pattern in "libsodium-*.dll" "libargon2*.dll" "libssl-*.dll" "libcrypto-*.dll"; do
-            cp -f /mingw64/bin/$pattern build/ 2>/dev/null || echo "note: no match for $pattern (may be static)"
+            cp -f /mingw64/bin/$pattern build/ 2>/dev/null || true
           done
 
-          # App resources (icons, translations, etc.)
+          # App resources (icons, etc.)
           if [ -d resources ]; then
             cp -rf resources build/
           fi
 
-          echo "Deployed Windows build contents:"
+          echo "=== Final build/ listing ==="
           ls -la build/
 
       - name: Archive build artifacts
