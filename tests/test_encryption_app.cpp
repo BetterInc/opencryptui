@@ -367,12 +367,12 @@ void TestOpenCryptUI::testEncryptDecrypt()
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Setting algorithm to AES-256-CBC");
     QTest::qWait(WAIT_TIME_SHORT);
 
-    // Use PBKDF2 which works more consistently in tests
-    setComboBoxValueAndClose(kdfComboBox, "PBKDF2");
-    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Setting KDF to PBKDF2");
+    // Use Argon2 (PBKDF2 now enforces a 600k-iteration floor per
+    // SECURITY.md / Fix #1 — would make this test slow).
+    setComboBoxValueAndClose(kdfComboBox, "Argon2");
+    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Setting KDF to Argon2");
     QTest::qWait(WAIT_TIME_SHORT);
 
-    // Reduce iterations for faster testing
     iterationsSpinBox->setValue(1);
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Setting iterations to 1");
     QTest::qWait(WAIT_TIME_SHORT);
@@ -1484,10 +1484,12 @@ void TestOpenCryptUI::testEncryptDecryptWithKeyfile()
     algorithmComboBox->setCurrentText("AES-256-CBC");
     QTest::qWait(WAIT_TIME_SHORT);
 
-    kdfComboBox->setCurrentText("PBKDF2");
+    // Use Argon2 so the test stays fast; PBKDF2 now enforces a 600k
+    // iteration floor (Fix #1 / SECURITY.md) that would slow this test down.
+    kdfComboBox->setCurrentText("Argon2");
     QTest::qWait(WAIT_TIME_SHORT);
 
-    iterationsSpinBox->setValue(1); // Reduce iterations for faster testing
+    iterationsSpinBox->setValue(1);
     QTest::qWait(WAIT_TIME_SHORT);
 
     hmacCheckBox->setChecked(false); // Disable HMAC for simplicity
@@ -1691,7 +1693,8 @@ void TestOpenCryptUI::testTamperDetection()
     filePathInput->setText(testFilePath);
     passwordInput->setText("tampertest123");
     algorithmComboBox->setCurrentText("AES-256-GCM"); // Use GCM for authenticated encryption
-    kdfComboBox->setCurrentText("PBKDF2");
+    // Use Argon2 (PBKDF2 now has a 600k-iteration floor — Fix #1 / SECURITY.md).
+    kdfComboBox->setCurrentText("Argon2");
     iterationsSpinBox->setValue(1);
     hmacCheckBox->setChecked(true); // Enable HMAC/integrity checking
 

@@ -239,10 +239,12 @@ bool OpenSSLProvider::isHardwareAccelerationSupported()
 
 QStringList OpenSSLProvider::supportedCiphers()
 {
+    // Camellia-256-CBC and Camellia-128-CBC removed: not on the CNSA 2.0 approved list
+    // and CBC mode provides no built-in authentication (AEAD).
     return {
         "AES-256-GCM", "ChaCha20-Poly1305", "AES-256-CTR", "AES-256-CBC",
         "AES-128-GCM", "AES-128-CTR", "AES-192-GCM", "AES-192-CTR",
-        "AES-128-CBC", "AES-192-CBC", "Camellia-256-CBC", "Camellia-128-CBC"};
+        "AES-128-CBC", "AES-192-CBC"};
 }
 
 QStringList OpenSSLProvider::supportedKDFs()
@@ -294,10 +296,7 @@ const EVP_CIPHER *OpenSSLProvider::getCipher(const QString &algorithm)
         return EVP_aes_128_cbc();
     if (algorithm == "AES-192-CBC")
         return EVP_aes_192_cbc();
-    if (algorithm == "Camellia-256-CBC")
-        return EVP_camellia_256_cbc();
-    if (algorithm == "Camellia-128-CBC")
-        return EVP_camellia_128_cbc();
+    // Camellia-256-CBC and Camellia-128-CBC intentionally omitted (not CNSA 2.0 approved).
     return nullptr;
 }
 

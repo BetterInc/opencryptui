@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
     const QString pwd  = "correct-horse-battery-staple";
 
     qInfo() << "=== ENCRYPT" << algo << "===";
-    bool ok = eng.encryptFile(plain, pwd, algo, kdf, 10000, /*useHMAC=*/false,
+    bool ok = eng.encryptFile(plain, pwd, algo, kdf, 600000, /*useHMAC=*/false,
                               /*customHeader=*/QString());
     qInfo() << "encryptFile returned:" << ok << " ct size:" << QFileInfo(ct).size();
     if (!ok) return 2;
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
     QFile::remove(plain); // force decrypt to produce a fresh file
 
     qInfo() << "=== DECRYPT ===";
-    ok = eng.decryptFile(ct, pwd, algo, kdf, 10000, /*useHMAC=*/false,
+    ok = eng.decryptFile(ct, pwd, algo, kdf, 600000, /*useHMAC=*/false,
                          /*customHeader=*/QString());
     qInfo() << "decryptFile returned:" << ok << " back size:"
             << (QFile::exists(plain) ? QFileInfo(plain).size() : -1);

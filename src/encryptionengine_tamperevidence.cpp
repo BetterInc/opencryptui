@@ -6,70 +6,116 @@
 #include <openssl/evp.h>
 #include <algorithm> // For std::min
 
-// Generate a digital signature for tamper evidence
+// ---------------------------------------------------------------------------
+// Fix #3: HKDF-based key separation using libsodium crypto_kdf_derive_from_key.
+//
+// crypto_kdf_derive_from_key(subkey, subkeylen, subkeyid, ctx, masterkey)
+//   ctx  = 8-byte NUL-padded context string (domain separator)
+//   id   = subkey index (1 = encryption, 2 = signing)
+//
+// master must be exactly crypto_kdf_KEYBYTES (32 bytes).
+// If the raw KDF output is longer (e.g. 64 bytes for Argon2/PBKDF2 with
+// EVP_MAX_KEY_LENGTH), we use only the first 32 bytes as the KDF master.
+// The master QByteArray is zeroed before this function returns.
+//
+// Returns false on any error; encryptionKey and signingKey are untouched.
+// ---------------------------------------------------------------------------
+/*static*/ bool EncryptionEngine::deriveSubkeys(QByteArray& master,
+                                                 QByteArray& encryptionKey,
+                                                 QByteArray& signingKey)
+{
+    // libsodium requires exactly crypto_kdf_KEYBYTES (32) bytes as master key.
+    if (master.size() < static_cast<int>(crypto_kdf_KEYBYTES)) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+            QString("Master key too short for KDF: %1 bytes (need %2)")
+            .arg(master.size()).arg(crypto_kdf_KEYBYTES));
+        sodium_memzero(master.data(), master.size());
+        return false;
+    }
+
+    // Use only the first 32 bytes as the master; any extra bytes are wiped below.
+    unsigned char kdfMaster[crypto_kdf_KEYBYTES];
+    memcpy(kdfMaster, master.constData(), crypto_kdf_KEYBYTES);
+    sodium_memzero(master.data(), master.size()); // wipe the full buffer now
+
+    // The context string must be exactly 8 bytes (NUL-padded if shorter).
+    // "OCUI-KEY" → encryption sub-key
+    // "OCUI-SIG" → signing sub-key
+    static_assert(crypto_kdf_CONTEXTBYTES == 8, "libsodium context must be 8 bytes");
+
+    encryptionKey.resize(static_cast<int>(crypto_kdf_BYTES_MAX <= 32
+                                          ? crypto_kdf_BYTES_MAX : 32));
+    signingKey.resize(crypto_sign_SEEDBYTES); // 32 bytes
+
+    int rc1 = crypto_kdf_derive_from_key(
+        reinterpret_cast<unsigned char*>(encryptionKey.data()),
+        static_cast<size_t>(encryptionKey.size()),
+        1, // subkey id 1 = encryption
+        "OCUI-KEY",
+        kdfMaster);
+
+    int rc2 = crypto_kdf_derive_from_key(
+        reinterpret_cast<unsigned char*>(signingKey.data()),
+        static_cast<size_t>(signingKey.size()),
+        2, // subkey id 2 = signing
+        "OCUI-SIG",
+        kdfMaster);
+
+    sodium_memzero(kdfMaster, sizeof(kdfMaster));
+
+    if (rc1 != 0 || rc2 != 0) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "crypto_kdf_derive_from_key failed");
+        sodium_memzero(encryptionKey.data(), encryptionKey.size());
+        sodium_memzero(signingKey.data(),    signingKey.size());
+        return false;
+    }
+
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Generate a digital signature for tamper evidence.
+// key = the Ed25519 SEED (32 bytes) derived via deriveSubkeys (Fix #3).
+// ---------------------------------------------------------------------------
 QByteArray EncryptionEngine::generateDigitalSignature(QFile& inputFile, const QByteArray& key)
 {
     // Save current file position
     qint64 originalPosition = inputFile.pos();
-    
+
     // Reset to beginning of file
     inputFile.seek(0);
-    
-    // Create a key for Ed25519 signature (32 bytes)
-    QByteArray signatureKey(crypto_sign_SECRETKEYBYTES, 0);
-    
-    // Derive a separate key for signing
-    QByteArray signingMaterial = key;
-    signingMaterial.append("SIG_KEY_DOMAIN_SEPARATION");
-    
+
+    // Derive the full Ed25519 keypair from the 32-byte seed.
+    QByteArray publicKey(crypto_sign_PUBLICKEYBYTES, 0);
+    QByteArray secretKey(crypto_sign_SECRETKEYBYTES, 0);
+
+    // key IS the 32-byte seed from deriveSubkeys — use it directly.
+    if (key.size() < static_cast<int>(crypto_sign_SEEDBYTES)) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+            "Signing seed too short for Ed25519");
+        return QByteArray();
+    }
+
+    crypto_sign_seed_keypair(
+        reinterpret_cast<unsigned char*>(publicKey.data()),
+        reinterpret_cast<unsigned char*>(secretKey.data()),
+        reinterpret_cast<const unsigned char*>(key.constData()));
+
+    // Hash the file content in chunks
     unsigned char hash[EVP_MAX_MD_SIZE] = {0};
-    unsigned int hashLen = 0;
-    
+    unsigned int  hashLen = 0;
+
     EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
     if (!mdctx) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to allocate MD context for signature key derivation");
-        return QByteArray(); // Return empty signature on error
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+            "Failed to allocate MD context for file hashing");
+        sodium_memzero(secretKey.data(), secretKey.size());
+        return QByteArray();
     }
-    
+
     bool success = true;
     success = success && (EVP_DigestInit_ex(mdctx, EVP_sha512(), NULL) == 1);
-    success = success && (EVP_DigestUpdate(mdctx, signingMaterial.constData(), signingMaterial.size()) == 1);
-    success = success && (EVP_DigestFinal_ex(mdctx, hash, &hashLen) == 1);
-    
-    // Always free the context
-    EVP_MD_CTX_free(mdctx);
-    
-    if (!success) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Signature key derivation failed");
-        sodium_memzero(hash, sizeof(hash));
-        return QByteArray(); // Return empty signature on error
-    }
-    
-    // Derive the 32-byte Ed25519 seed from the hash into a separate buffer so
-    // that crypto_sign_seed_keypair's sk output and seed input never alias.
-    // (When they alias, the sk buffer is partially overwritten before the seed
-    // is fully consumed, producing a signing key that does NOT match the
-    // public key. Self-verification then fails even without any tampering.)
-    QByteArray seed(crypto_sign_SEEDBYTES, 0);
-    memcpy(seed.data(), hash, std::min<size_t>(hashLen, crypto_sign_SEEDBYTES));
 
-    QByteArray publicKey(crypto_sign_PUBLICKEYBYTES, 0);
-    crypto_sign_seed_keypair(reinterpret_cast<unsigned char*>(publicKey.data()),
-                           reinterpret_cast<unsigned char*>(signatureKey.data()),
-                           reinterpret_cast<const unsigned char*>(seed.constData()));
-    sodium_memzero(seed.data(), seed.size());
-    
-    // Hash the file content in chunks
-    mdctx = EVP_MD_CTX_new();
-    if (!mdctx) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to allocate MD context for file hashing");
-        sodium_memzero(signatureKey.data(), signatureKey.size());
-        return QByteArray(); // Return empty signature on error
-    }
-    
-    success = true;
-    success = success && (EVP_DigestInit_ex(mdctx, EVP_sha512(), NULL) == 1);
-    
     if (success) {
         QByteArray buffer(4096, 0);
         while (!inputFile.atEnd() && success) {
@@ -78,265 +124,218 @@ QByteArray EncryptionEngine::generateDigitalSignature(QFile& inputFile, const QB
                 success = success && (EVP_DigestUpdate(mdctx, buffer.constData(), bytesRead) == 1);
             } else if (bytesRead < 0) {
                 success = false;
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "File read error during signature generation");
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                    "File read error during signature generation");
             }
         }
-        
         success = success && (EVP_DigestFinal_ex(mdctx, hash, &hashLen) == 1);
     }
-    
-    // Always free the context
-    EVP_MD_CTX_free(mdctx);
-    
-    if (!success) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "File hashing failed during signature generation");
-        sodium_memzero(signatureKey.data(), signatureKey.size());
-        sodium_memzero(hash, sizeof(hash));
-        return QByteArray(); // Return empty signature on error
-    }
-    
-    // Create signature
-    QByteArray signature(crypto_sign_BYTES + hashLen, 0);
-    unsigned long long signatureLen;
 
-    crypto_sign_detached(reinterpret_cast<unsigned char*>(signature.data()),
-                        &signatureLen,
-                        hash,
-                        hashLen,
-                        reinterpret_cast<const unsigned char*>(signatureKey.constData()));
-    
-    // Resize to actual signature length
-    signature.resize(signatureLen);
-    
-    // Append public key to signature for verification
+    EVP_MD_CTX_free(mdctx);
+
+    if (!success) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+            "File hashing failed during signature generation");
+        sodium_memzero(secretKey.data(), secretKey.size());
+        sodium_memzero(hash, sizeof(hash));
+        return QByteArray();
+    }
+
+    // Create detached Ed25519 signature over SHA-512(file)
+    QByteArray signature(crypto_sign_BYTES + hashLen, 0);
+    unsigned long long signatureLen = 0;
+
+    crypto_sign_detached(
+        reinterpret_cast<unsigned char*>(signature.data()),
+        &signatureLen,
+        hash, hashLen,
+        reinterpret_cast<const unsigned char*>(secretKey.constData()));
+
+    signature.resize(static_cast<int>(signatureLen));
+
+    // Append public key so verifySignature can re-derive and compare.
     signature.append(publicKey);
-    
-    // Securely erase temporary keys
-    sodium_memzero(signatureKey.data(), signatureKey.size());
-    
-    // Reset file position
+
+    sodium_memzero(secretKey.data(), secretKey.size());
+    sodium_memzero(hash, sizeof(hash));
+
     inputFile.seek(originalPosition);
-    
+
     SECURE_LOG(DEBUG, "EncryptionEngine", "Generated digital signature for tamper evidence");
     return signature;
 }
 
+// ---------------------------------------------------------------------------
 // Append signature to encrypted file.
-// On-disk trailer layout (must match verifySignature / cryptOperation's detector):
+// On-disk trailer layout (must match verifySignature / cryptOperation detector):
 //   [signature N bytes][magic 4][sigLen 4][CRC 4]
 // The 12-byte fixed trailer sits at size-12..size, so the detector can
 // read magic/sigLen from a known position without first knowing N.
+// ---------------------------------------------------------------------------
 void EncryptionEngine::appendSignature(QFile& outputFile, const QByteArray& signature)
 {
     outputFile.seek(outputFile.size());
-
-    // Write the signature body first, then the fixed trailer.
     outputFile.write(signature);
 
     QDataStream out(&outputFile);
     out.setByteOrder(QDataStream::BigEndian);
     out << quint32(0x5349475F);          // magic "SIG_"
     out << quint32(signature.size());    // sigLen
-    out << calculateCRC32(signature);    // CRC32 over the signature bytes
+    out << calculateCRC32(signature);    // CRC32 over signature bytes
 
-    SECURE_LOG(DEBUG, "EncryptionEngine", QString("Appended digital signature (%1 bytes) to encrypted file").arg(signature.size()));
+    SECURE_LOG(DEBUG, "EncryptionEngine",
+        QString("Appended digital signature (%1 bytes) to encrypted file").arg(signature.size()));
 }
 
-// Verify signature from encrypted file
+// ---------------------------------------------------------------------------
+// Verify signature from encrypted file.
+// key = the Ed25519 SEED (32 bytes) derived via deriveSubkeys (Fix #3).
+// ---------------------------------------------------------------------------
 bool EncryptionEngine::verifySignature(QFile& inputFile, const QByteArray& key, QByteArray& storedSignature)
 {
-    // Save original position
     qint64 originalPosition = inputFile.pos();
-    
-    // Go near the end of file to check for signature block
-    if (inputFile.size() < 16) {
-        // Too small to have a signature
+
+    if (inputFile.size() < 64) {
         inputFile.seek(originalPosition);
         return false;
     }
-    
-    // Look for signature block at the end
-    // Check if there's enough room for a signature block
-    if (inputFile.size() < 64) { // Reasonable minimum size for a signed file
-        inputFile.seek(originalPosition);
-        return false;
-    }
-    
-    inputFile.seek(inputFile.size() - 12); // Magic + length + CRC
-    
+
+    // Read the 12-byte trailer (magic + sigLen + CRC)
+    inputFile.seek(inputFile.size() - 12);
     QDataStream in(&inputFile);
     in.setByteOrder(QDataStream::BigEndian);
-    
-    // Read magic number
-    quint32 magic;
-    in >> magic;
-    
+
+    quint32 magic; in >> magic;
     if (magic != 0x5349475F) {
-        // No signature block found
         inputFile.seek(originalPosition);
         return false;
     }
-    
-    // Read signature length
-    quint32 signatureLength;
-    in >> signatureLength;
-    
-    // Sanity check
-    if (signatureLength > 10 * 1024 || // Max 10KB for signature (very generous)
-        signatureLength > inputFile.size() - 12) {
-        
+
+    quint32 signatureLength; in >> signatureLength;
+    if (signatureLength > 10 * 1024 ||
+        signatureLength > static_cast<quint32>(inputFile.size() - 12)) {
         SECURE_LOG(WARNING, "EncryptionEngine", "Invalid signature length detected");
         inputFile.seek(originalPosition);
         return false;
     }
-    
-    // Go to signature start
-    inputFile.seek(inputFile.size() - 12 - signatureLength);
-    
-    // Read signature
-    storedSignature = inputFile.read(signatureLength);
-    
-    // Read CRC
+
+    // Read the signature body
+    inputFile.seek(inputFile.size() - 12 - static_cast<qint64>(signatureLength));
+    storedSignature = inputFile.read(static_cast<qint64>(signatureLength));
+
+    // Read and verify CRC
     inputFile.seek(inputFile.size() - 4);
-    quint32 storedCrc;
-    in >> storedCrc;
-    
-    // Verify CRC
-    quint32 calculatedCrc = calculateCRC32(storedSignature);
-    if (calculatedCrc != storedCrc) {
+    quint32 storedCrc; in >> storedCrc;
+    if (calculateCRC32(storedSignature) != storedCrc) {
         SECURE_LOG(WARNING, "EncryptionEngine", "Signature CRC check failed");
         inputFile.seek(originalPosition);
         return false;
     }
 
-    // Split signature and public key
-    if (storedSignature.size() < crypto_sign_BYTES + crypto_sign_PUBLICKEYBYTES) {
+    // Split into Ed25519 signature bytes + public key
+    if (storedSignature.size() < static_cast<int>(crypto_sign_BYTES + crypto_sign_PUBLICKEYBYTES)) {
         SECURE_LOG(WARNING, "EncryptionEngine", "Signature too short");
         inputFile.seek(originalPosition);
         return false;
     }
-    
-    QByteArray actualSignature = storedSignature.left(crypto_sign_BYTES);
-    QByteArray publicKey = storedSignature.right(crypto_sign_PUBLICKEYBYTES);
-    
-    // Verify public key is derived from our key
+
+    QByteArray actualSignature = storedSignature.left(static_cast<int>(crypto_sign_BYTES));
+    QByteArray publicKey       = storedSignature.right(static_cast<int>(crypto_sign_PUBLICKEYBYTES));
+
+    // Re-derive the expected public key from the signing seed (Fix #3).
+    if (key.size() < static_cast<int>(crypto_sign_SEEDBYTES)) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Signing seed too short");
+        inputFile.seek(originalPosition);
+        return false;
+    }
+
     QByteArray expectedPublicKey(crypto_sign_PUBLICKEYBYTES, 0);
-    QByteArray derivedPrivateKey(crypto_sign_SECRETKEYBYTES, 0);
-    
-    // Derive private key same way as during signing
-    QByteArray signingMaterial = key;
-    signingMaterial.append("SIG_KEY_DOMAIN_SEPARATION");
-    
+    QByteArray derivedSecretKey(crypto_sign_SECRETKEYBYTES, 0);
+    crypto_sign_seed_keypair(
+        reinterpret_cast<unsigned char*>(expectedPublicKey.data()),
+        reinterpret_cast<unsigned char*>(derivedSecretKey.data()),
+        reinterpret_cast<const unsigned char*>(key.constData()));
+    sodium_memzero(derivedSecretKey.data(), derivedSecretKey.size());
+
+    // Fix #6: constant-time comparison to avoid timing side-channel.
+    if (sodium_memcmp(publicKey.constData(), expectedPublicKey.constData(),
+                      crypto_sign_PUBLICKEYBYTES) != 0) {
+        SECURE_LOG(WARNING, "EncryptionEngine",
+            "Signature verification failed: invalid public key");
+        inputFile.seek(originalPosition);
+        return false;
+    }
+
+    // Hash the file content (everything before the signature trailer)
+    inputFile.seek(0);
+
     unsigned char hash[EVP_MAX_MD_SIZE] = {0};
-    unsigned int hashLen = 0;
-    
+    unsigned int  hashLen = 0;
+
     EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
     if (!mdctx) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to allocate MD context for signature verification");
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+            "Failed to allocate MD context for file hashing during verify");
         inputFile.seek(originalPosition);
         return false;
     }
-    
+
     bool success = true;
     success = success && (EVP_DigestInit_ex(mdctx, EVP_sha512(), NULL) == 1);
-    success = success && (EVP_DigestUpdate(mdctx, signingMaterial.constData(), signingMaterial.size()) == 1);
-    success = success && (EVP_DigestFinal_ex(mdctx, hash, &hashLen) == 1);
-    
-    // Always free the context
-    EVP_MD_CTX_free(mdctx);
-    
-    if (!success) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Key derivation failed during signature verification");
-        sodium_memzero(hash, sizeof(hash));
-        inputFile.seek(originalPosition);
-        return false;
-    }
-    
-    // Same separate-seed fix as in generateDigitalSignature — sk and seed must
-    // not alias or the derived public key will not match the real signing key.
-    QByteArray seed(crypto_sign_SEEDBYTES, 0);
-    memcpy(seed.data(), hash, std::min<size_t>(hashLen, crypto_sign_SEEDBYTES));
-    crypto_sign_seed_keypair(reinterpret_cast<unsigned char*>(expectedPublicKey.data()),
-                            reinterpret_cast<unsigned char*>(derivedPrivateKey.data()),
-                            reinterpret_cast<const unsigned char*>(seed.constData()));
-    sodium_memzero(seed.data(), seed.size());
-    
-    // Securely clear sensitive data
-    sodium_memzero(derivedPrivateKey.data(), derivedPrivateKey.size());
-    
-    // Compare public keys
-    if (publicKey != expectedPublicKey) {
-        SECURE_LOG(WARNING, "EncryptionEngine", "Signature verification failed: invalid public key");
-        inputFile.seek(originalPosition);
-        return false;
-    }
-    
-    // Hash the file content (excluding signature block)
-    inputFile.seek(0);
-    mdctx = EVP_MD_CTX_new();
-    if (!mdctx) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to allocate MD context for file hashing");
-        inputFile.seek(originalPosition);
-        return false;
-    }
-    
-    success = true;
-    success = success && (EVP_DigestInit_ex(mdctx, EVP_sha512(), NULL) == 1);
-    
+
     if (success) {
-        qint64 dataSize = inputFile.size() - 12 - signatureLength;
+        qint64 dataSize = inputFile.size() - 12 - static_cast<qint64>(signatureLength);
         QByteArray buffer(4096, 0);
-        
         qint64 remaining = dataSize;
+
         while (remaining > 0 && success) {
-            qint64 toRead = std::min(remaining, static_cast<qint64>(buffer.size()));
+            qint64 toRead   = std::min(remaining, static_cast<qint64>(buffer.size()));
             qint64 bytesRead = inputFile.read(buffer.data(), toRead);
-            
             if (bytesRead <= 0) {
                 success = false;
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "File read error during signature verification");
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                    "File read error during signature verification");
                 break;
             }
-            
             success = success && (EVP_DigestUpdate(mdctx, buffer.constData(), bytesRead) == 1);
             remaining -= bytesRead;
         }
-        
-        if (success) {
+
+        if (success)
             success = success && (EVP_DigestFinal_ex(mdctx, hash, &hashLen) == 1);
-        }
     }
-    
-    // Always free the context
+
     EVP_MD_CTX_free(mdctx);
-    
+
     if (!success) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "File hashing failed during signature verification");
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+            "File hashing failed during signature verification");
         sodium_memzero(hash, sizeof(hash));
         inputFile.seek(originalPosition);
         return false;
     }
-    
-    // Verify signature
+
     int result = crypto_sign_verify_detached(
         reinterpret_cast<const unsigned char*>(actualSignature.constData()),
-        hash,
-        hashLen,
+        hash, hashLen,
         reinterpret_cast<const unsigned char*>(publicKey.constData()));
-    
-    // Reset file position
+
+    sodium_memzero(hash, sizeof(hash));
     inputFile.seek(originalPosition);
-    
+
     if (result != 0) {
-        SECURE_LOG(WARNING, "EncryptionEngine", "Signature verification failed: invalid signature");
+        SECURE_LOG(WARNING, "EncryptionEngine",
+            "Signature verification failed: invalid signature");
         return false;
     }
-    
+
     SECURE_LOG(DEBUG, "EncryptionEngine", "Digital signature verified successfully");
     return true;
 }
 
+// ---------------------------------------------------------------------------
 // Calculate CRC32 checksum for integrity checks
+// ---------------------------------------------------------------------------
 quint32 EncryptionEngine::calculateCRC32(const QByteArray& data)
 {
     quint32 crc = 0xFFFFFFFF;
@@ -379,10 +378,10 @@ quint32 EncryptionEngine::calculateCRC32(const QByteArray& data)
         0xCDD70693, 0x54DE5729, 0x23D967BF, 0xB3667A2E, 0xC4614AB8, 0x5D681B02, 0x2A6F2B94,
         0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D
     };
-    
+
     for (int i = 0; i < data.size(); i++) {
         crc = (crc >> 8) ^ crcTable[(crc ^ static_cast<unsigned char>(data[i])) & 0xFF];
     }
-    
+
     return ~crc;
 }

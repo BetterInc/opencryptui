@@ -11,6 +11,79 @@
 #include <openssl/evp.h>
 #include <sodium.h>
 
+// ---------------------------------------------------------------------------
+// Fix #7: IV size depends on the cipher mode.
+//   AES-GCM / ChaCha20-Poly1305 → 12 bytes (96-bit nonce per spec)
+//   AES-CBC / AES-CTR / Camellia → 16 bytes
+//   XChaCha20                    → 24 bytes (not currently exposed, but guarded)
+// ---------------------------------------------------------------------------
+/*static*/ int EncryptionEngine::ivSizeForAlgorithm(const QString& algorithm)
+{
+    if (algorithm.contains("GCM") ||
+        algorithm == "ChaCha20-Poly1305")
+        return 12;
+    if (algorithm == "XChaCha20")
+        return 24;
+    return 16; // CBC, CTR, Camellia, fallback
+}
+
+// ---------------------------------------------------------------------------
+// Fix #2: algorithm <-> numeric-ID mappings (stored in the OCUI file header)
+// ---------------------------------------------------------------------------
+/*static*/ quint8 EncryptionEngine::algorithmId(const QString& algorithm)
+{
+    if (algorithm == "AES-256-GCM")        return ALG_ID_AES256_GCM;
+    if (algorithm == "ChaCha20-Poly1305")  return ALG_ID_CHACHA20_POLY1305;
+    if (algorithm == "AES-256-CTR")        return ALG_ID_AES256_CTR;
+    if (algorithm == "AES-256-CBC")        return ALG_ID_AES256_CBC;
+    if (algorithm == "AES-128-GCM")        return ALG_ID_AES128_GCM;
+    if (algorithm == "AES-128-CTR")        return ALG_ID_AES128_CTR;
+    if (algorithm == "AES-192-GCM")        return ALG_ID_AES192_GCM;
+    if (algorithm == "AES-192-CTR")        return ALG_ID_AES192_CTR;
+    if (algorithm == "AES-128-CBC")        return ALG_ID_AES128_CBC;
+    if (algorithm == "AES-192-CBC")        return ALG_ID_AES192_CBC;
+    if (algorithm == "Camellia-256-CBC")   return ALG_ID_CAMELLIA256_CBC;
+    if (algorithm == "Camellia-128-CBC")   return ALG_ID_CAMELLIA128_CBC;
+    return ALG_ID_UNKNOWN;
+}
+
+/*static*/ QString EncryptionEngine::algorithmFromId(quint8 id)
+{
+    switch (id) {
+    case ALG_ID_AES256_GCM:        return "AES-256-GCM";
+    case ALG_ID_CHACHA20_POLY1305: return "ChaCha20-Poly1305";
+    case ALG_ID_AES256_CTR:        return "AES-256-CTR";
+    case ALG_ID_AES256_CBC:        return "AES-256-CBC";
+    case ALG_ID_AES128_GCM:        return "AES-128-GCM";
+    case ALG_ID_AES128_CTR:        return "AES-128-CTR";
+    case ALG_ID_AES192_GCM:        return "AES-192-GCM";
+    case ALG_ID_AES192_CTR:        return "AES-192-CTR";
+    case ALG_ID_AES128_CBC:        return "AES-128-CBC";
+    case ALG_ID_AES192_CBC:        return "AES-192-CBC";
+    case ALG_ID_CAMELLIA256_CBC:   return "Camellia-256-CBC";
+    case ALG_ID_CAMELLIA128_CBC:   return "Camellia-128-CBC";
+    default:                        return QString();
+    }
+}
+
+/*static*/ quint8 EncryptionEngine::kdfId(const QString& kdf)
+{
+    if (kdf == "PBKDF2") return KDF_ID_PBKDF2;
+    if (kdf == "Argon2") return KDF_ID_ARGON2;
+    if (kdf == "Scrypt") return KDF_ID_SCRYPT;
+    return KDF_ID_UNKNOWN;
+}
+
+/*static*/ QString EncryptionEngine::kdfFromId(quint8 id)
+{
+    switch (id) {
+    case KDF_ID_PBKDF2: return "PBKDF2";
+    case KDF_ID_ARGON2: return "Argon2";
+    case KDF_ID_SCRYPT: return "Scrypt";
+    default:             return QString();
+    }
+}
+
 bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &outputPath, const QString &password, const QString &algorithm, bool encrypt, const QString &kdf, int iterations, bool useHMAC, const QString &customHeader, const QStringList &keyfilePaths)
 {
     if (!m_currentProvider)
@@ -21,15 +94,22 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
 
     // Always force integrity check (HMAC/AEAD) for government-grade security
     bool enforceIntegrity = true;
-    
+
     SECURE_LOG(DEBUG, "EncryptionEngine", QString("Starting cryptOperation with provider: %1").arg(m_currentProviderName));
     SECURE_LOG(DEBUG, "EncryptionEngine", QString("Encrypt mode: %1").arg(encrypt ? "Encryption" : "Decryption"));
-    SECURE_LOG(DEBUG, "EncryptionEngine", QString("Input file: %1").arg(inputPath));
-    SECURE_LOG(DEBUG, "EncryptionEngine", QString("Output file: %1").arg(outputPath));
-    SECURE_LOG(DEBUG, "EncryptionEngine", QString("Algorithm: %1").arg(algorithm));
-    SECURE_LOG(DEBUG, "EncryptionEngine", QString("KDF: %1").arg(kdf));
-    SECURE_LOG(DEBUG, "EncryptionEngine", QString("Iterations: %1").arg(iterations));
-    SECURE_LOG(DEBUG, "EncryptionEngine", QString("Use HMAC: %1").arg((useHMAC || enforceIntegrity) ? "Yes (Enforced)" : "No"));
+    SECURE_LOG(DEBUG, "EncryptionEngine", QString("Algorithm: %1, KDF: %2, iterations: %3").arg(algorithm).arg(kdf).arg(iterations));
+
+    // Fix #2: validate that algorithm and KDF are known before touching any file.
+    quint8 algId = algorithmId(algorithm);
+    quint8 kId   = kdfId(kdf);
+    if (algId == ALG_ID_UNKNOWN) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Unknown algorithm: %1").arg(algorithm));
+        return false;
+    }
+    if (kId == KDF_ID_UNKNOWN) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Unknown KDF: %1").arg(kdf));
+        return false;
+    }
 
     QFile inputFile(inputPath);
     QFile outputFile(outputPath);
@@ -48,135 +128,108 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         return false;
     }
 
-    QByteArray key;
+    // masterKey holds the raw KDF output (up to 64 bytes for Argon2/Scrypt with
+    // EVP_MAX_KEY_LENGTH = 64).  We split it into encKey (32 B) + sigKey (32 B)
+    // via HKDF-like key separation in deriveSubkeys (Fix #3).
+    QByteArray masterKey;
+    QByteArray encKey;
+    QByteArray sigKey;
+
     bool success = false;
     auto cleanup = qScopeGuard([&]() {
-        if (inputFile.isOpen()) inputFile.close();
+        if (inputFile.isOpen())  inputFile.close();
         if (outputFile.isOpen()) outputFile.close();
-        // Never leave partial plaintext (or partial ciphertext) on disk after a failed run.
+        // Never leave partial plaintext (or partial ciphertext) on disk.
         if (!success) {
             QFile::remove(outputPath);
         }
-        if (!key.isEmpty()) {
-            sodium_memzero(key.data(), key.size());
-        }
+        if (!masterKey.isEmpty()) sodium_memzero(masterKey.data(), masterKey.size());
+        if (!encKey.isEmpty())    sodium_memzero(encKey.data(),    encKey.size());
+        if (!sigKey.isEmpty())    sodium_memzero(sigKey.data(),    sigKey.size());
     });
 
-    // Generate salt and IV or read them from encrypted file
+    // Fix #7: derive proper IV size for this algorithm.
+    const int ivSize = ivSizeForAlgorithm(algorithm);
+
+    // Salt is always 32 bytes; IV size is algorithm-dependent.
     QByteArray salt(32, 0);
-    QByteArray iv(16, 0); // Most algorithms use 16 bytes
+    QByteArray iv(ivSize, 0);
+
+    // -----------------------------------------------------------------------
+    // Fix #4: INVARIANT — salt, IV, and the OCUI header bytes are part of the
+    // signed region.  generateDigitalSignature seeks to offset 0 and reads the
+    // entire file before the trailer is appended, so every byte written to the
+    // output before appendSignature() is called is covered by the Ed25519
+    // signature.  Do NOT append additional bytes after appendSignature() or
+    // move salt/IV writes to after the ciphertext — either change would silently
+    // break integrity.  This comment is the explicit invariant documentation
+    // requested in Fix #4.
+    // -----------------------------------------------------------------------
 
     if (encrypt)
     {
-        // Use the provider's generateRandomBytes for consistency
+        // -----------------------------------------------------------------
+        // ENCRYPT PATH
+        // -----------------------------------------------------------------
         salt = m_currentProvider->generateRandomBytes(32);
-        if (salt.isEmpty())
-        {
+        if (salt.isEmpty()) {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to generate salt");
             return false;
         }
 
-        iv = m_currentProvider->generateRandomBytes(16);
-        if (iv.isEmpty())
-        {
+        iv = m_currentProvider->generateRandomBytes(ivSize);
+        if (iv.isEmpty()) {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to generate IV");
             return false;
         }
 
         SECURE_LOG(DEBUG, "EncryptionEngine", QString("Generated salt (hex): %1").arg(QString(salt.toHex())));
         SECURE_LOG(DEBUG, "EncryptionEngine", QString("Generated IV (hex): %1").arg(QString(iv.toHex())));
-    }
-    else
-    {
-        // For decryption, read the salt and IV from the file
-        int headerSize = 0;
-        if (!customHeader.isEmpty())
-        {
-            headerSize = customHeader.size();
-            // Ensure we're at the right position after the header
-            if (!inputFile.seek(headerSize))
-            {
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to seek past header in input file");
-                return false;
-            }
-        }
-        else
-        {
-            // Ensure we're at the beginning of the file if no header
-            if (!inputFile.seek(0))
-            {
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to seek to beginning of input file");
-                return false;
-            }
-        }
 
-        // Read salt
-        if (inputFile.read(salt.data(), salt.size()) != salt.size())
-        {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read salt from input file");
+        // Derive master key, then split into enc + sig sub-keys (Fix #3).
+        masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
+        if (masterKey.isEmpty()) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Key derivation failed");
             return false;
         }
-
-        // Read IV
-        if (inputFile.read(iv.data(), iv.size()) != iv.size())
-        {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read IV from input file");
+        if (!deriveSubkeys(masterKey, encKey, sigKey)) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Sub-key derivation failed");
             return false;
         }
+        // masterKey is zeroed inside deriveSubkeys.
 
-        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Read salt (hex): %1").arg(QString(salt.toHex())));
-        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Read IV (hex): %1").arg(QString(iv.toHex())));
-    }
-
-    // Removed storage of IV in class member for security reasons
-
-    // Derive key using the password and keyfiles
-    key = deriveKey(password, salt, keyfilePaths, kdf, iterations);
-
-    if (key.isEmpty())
-    {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Key derivation failed");
-        return false;
-    }
-
-    // Special handling for AEAD ciphers (avoid double authentication and potental conflicts)
-    bool isAEADCipher = algorithm.contains("GCM") || algorithm.contains("CCM") || 
-                         algorithm.contains("ChaCha20-Poly1305");
-    if (isAEADCipher) {
-        SECURE_LOG(DEBUG, "EncryptionEngine", 
-            QString("AEAD cipher detected (%1), enabling built-in authentication").arg(algorithm));
-        enforceIntegrity = true;  // Always enable digital signatures for AEAD
-        useHMAC = false;          // Disable separate HMAC for AEAD (they have built-in auth)
-    }
-
-    // If digital signatures or HMAC is required, ensure the file has tamper evidence
-    bool needsTamperEvidence = enforceIntegrity || useHMAC;
-
-    if (encrypt)
-    {
-        // Write header, salt, and IV for encryption
-        if (!customHeader.isEmpty())
+        // Fix #2: write OCUI v2 header BEFORE salt/IV so it is authenticated.
         {
-            outputFile.write(customHeader.toUtf8());
+            QDataStream hdrOut(&outputFile);
+            hdrOut.setByteOrder(QDataStream::BigEndian);
+            hdrOut << quint32(OCUI_MAGIC);
+            hdrOut << quint8(OCUI_FORMAT_VER);
+            hdrOut << quint8(algId);
+            hdrOut << quint8(kId);
+            hdrOut << quint8(0); // reserved
+            hdrOut << quint32(static_cast<quint32>(iterations));
         }
         outputFile.write(salt);
         outputFile.write(iv);
 
-        // Reset input file position to beginning for encryption
-        if (!inputFile.seek(0))
-        {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to seek to beginning of input file before encryption");
+        if (!inputFile.seek(0)) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to seek input file");
             return false;
         }
 
-        // Perform encryption first; the signature must cover the same bytes
-        // that verifySignature() hashes on the decrypt side, i.e. the entire
-        // output file EXCEPT the 12-byte trailer and signature body.
-        success = m_currentProvider->encrypt(inputFile, outputFile, key, iv, algorithm, useHMAC || enforceIntegrity);
+        // Special handling for AEAD ciphers
+        bool isAEADCipher = algorithm.contains("GCM") || algorithm.contains("CCM") ||
+                            algorithm.contains("ChaCha20-Poly1305");
+        if (isAEADCipher) {
+            useHMAC = false; // AEAD has built-in auth; only Ed25519 wraps it
+        }
+
+        success = m_currentProvider->encrypt(inputFile, outputFile, encKey, iv, algorithm, useHMAC || enforceIntegrity);
 
         if (enforceIntegrity && success) {
             outputFile.flush();
-            QByteArray signature = generateDigitalSignature(outputFile, key);
+            // generateDigitalSignature uses sigKey (Fix #3).
+            QByteArray signature = generateDigitalSignature(outputFile, sigKey);
             if (signature.isEmpty()) {
                 SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to generate tamper-evidence signature");
                 success = false;
@@ -187,138 +240,185 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
     }
     else
     {
-        // For decryption, we need to properly handle the signature that may exist at the end of the file
-        QByteArray storedSignature;
-        bool hasSignature = false;
-        bool validSignature = true;
-        
-        // Save file position before signature verification
-        qint64 decryptionStartPos = customHeader.size() + salt.size() + iv.size();
-        qint64 signatureSize = 0;
-        
-        // Check if file has a signature
-        if (enforceIntegrity) {
-            // Create a copy of the file to examine without disturbing the original file position
-            QFile signatureCheckFile(inputPath);
-            if (signatureCheckFile.open(QIODevice::ReadOnly)) {
-                // Check file size to see if it's large enough to have a signature
-                hasSignature = signatureCheckFile.size() > (decryptionStartPos + 64); // Header + minimum content + signature
-                
-                if (hasSignature) {
-                    // Look for signature marker at end of file
-                    signatureCheckFile.seek(signatureCheckFile.size() - 12); // Magic + length + CRC
-                    QDataStream in(&signatureCheckFile);
-                    in.setByteOrder(QDataStream::BigEndian);
-                    
-                    quint32 magic;
-                    in >> magic;
-                    
-                    if (magic == 0x5349475F) { // "SIG_"
-                        // Read signature length
-                        quint32 sigLength;
-                        in >> sigLength;
-                        
-                        // Sanity check the signature length
-                        if (sigLength > 0 && sigLength < signatureCheckFile.size() - decryptionStartPos - 12) {
-                            signatureSize = sigLength + 12; // signature + magic + length + CRC
-                            
-                            // Save original position before verification
-                            qint64 savePos = inputFile.pos();
-                            
-                            // Verify the signature if we have one
-                            validSignature = verifySignature(inputFile, key, storedSignature);
-                            
-                            // Restore position after verification
-                            inputFile.seek(savePos);
-                            
-                            if (validSignature) {
-                                SECURE_LOG(DEBUG, "EncryptionEngine", "Valid signature found and verified");
-                            } else {
-                                SECURE_LOG(WARNING, "EncryptionEngine", "Digital signature validation failed - file may have been tampered with");
-                            }
-                        } else {
-                            hasSignature = false;
-                            SECURE_LOG(WARNING, "EncryptionEngine", "Invalid signature length: " + QString::number(sigLength));
-                        }
-                    } else {
-                        hasSignature = false;
-                        SECURE_LOG(DEBUG, "EncryptionEngine", "No signature marker found");
-                    }
-                }
-                signatureCheckFile.close();
+        // -----------------------------------------------------------------
+        // DECRYPT PATH
+        // -----------------------------------------------------------------
+
+        // Fix #2: read and validate the OCUI v2 header.
+        {
+            // Reject old-format files (no "OCUI" magic) rather than silently
+            // accepting them.  Old files must be re-encrypted.
+            quint32 magic = 0;
+            quint8  fmtVer = 0, fileAlgId = 0, fileKdfId = 0, reserved = 0;
+            quint32 fileIterations = 0;
+
+            QDataStream hdrIn(&inputFile);
+            hdrIn.setByteOrder(QDataStream::BigEndian);
+            hdrIn >> magic;
+            if (magic != OCUI_MAGIC) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                    "File does not have OCUI v2 header. Old-format files must be "
+                    "re-encrypted — rejecting for security.");
+                return false;
             }
+            hdrIn >> fmtVer >> fileAlgId >> fileKdfId >> reserved >> fileIterations;
+
+            if (fmtVer != OCUI_FORMAT_VER) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                    QString("Unsupported OCUI format version: %1").arg(fmtVer));
+                return false;
+            }
+
+            // Reject if the stored algorithm doesn't match the caller's request.
+            if (fileAlgId != algId) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                    QString("Algorithm mismatch: file says %1 (%2), caller wants %3 (%4)")
+                    .arg(fileAlgId).arg(algorithmFromId(fileAlgId))
+                    .arg(algId).arg(algorithm));
+                return false;
+            }
+
+            // Reject if the stored KDF doesn't match the caller's request.
+            if (fileKdfId != kId) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                    QString("KDF mismatch: file says %1 (%2), caller wants %3 (%4)")
+                    .arg(fileKdfId).arg(kdfFromId(fileKdfId))
+                    .arg(kId).arg(kdf));
+                return false;
+            }
+
+            // Use the iteration count stored in the file, not the caller's value,
+            // so an attacker cannot request fewer iterations.
+            iterations = static_cast<int>(fileIterations);
+
+            // Enforce the floor independently of calculateSecureIterations so
+            // we never silently accept a file encrypted with a weak KDF.
+            if (kId == KDF_ID_PBKDF2 && iterations < 600000) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                    QString("PBKDF2 iteration count in file (%1) is below the 600 000 "
+                            "floor — rejecting.").arg(iterations));
+                return false;
+            }
+
+            SECURE_LOG(DEBUG, "EncryptionEngine",
+                QString("OCUI v2 header OK: alg=%1 kdf=%2 iters=%3")
+                .arg(algorithm).arg(kdf).arg(iterations));
         }
 
-        // Abort before any plaintext can be written when integrity is enforced
-        // and the signature did not verify. The cleanup guard removes the
-        // (empty) output file so no partial plaintext is ever observable.
-        if (hasSignature && !validSignature && enforceIntegrity) {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                "Integrity check failed: digital signature did not verify - aborting decryption");
+        // Read salt and IV from the file (after the OCUI header).
+        if (inputFile.read(salt.data(), salt.size()) != salt.size()) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read salt");
+            return false;
+        }
+        if (inputFile.read(iv.data(), iv.size()) != iv.size()) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read IV");
             return false;
         }
 
-        // Make sure we're at the correct position for decryption
+        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Read salt (hex): %1").arg(QString(salt.toHex())));
+        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Read IV (hex): %1").arg(QString(iv.toHex())));
+
+        // Derive master key, then split into enc + sig sub-keys (Fix #3).
+        masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
+        if (masterKey.isEmpty()) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Key derivation failed");
+            return false;
+        }
+        if (!deriveSubkeys(masterKey, encKey, sigKey)) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Sub-key derivation failed");
+            return false;
+        }
+
+        // decryptionStartPos = OCUI_HEADER_SIZE + salt(32) + iv(ivSize)
+        qint64 decryptionStartPos = static_cast<qint64>(OCUI_HEADER_SIZE) + salt.size() + iv.size();
+        qint64 signatureSize = 0;
+        bool hasSignature = false;
+        bool validSignature = true;
+        QByteArray storedSignature;
+
+        if (enforceIntegrity) {
+            QFile sigCheckFile(inputPath);
+            if (sigCheckFile.open(QIODevice::ReadOnly)) {
+                hasSignature = sigCheckFile.size() > (decryptionStartPos + 64);
+                if (hasSignature) {
+                    sigCheckFile.seek(sigCheckFile.size() - 12);
+                    QDataStream in(&sigCheckFile);
+                    in.setByteOrder(QDataStream::BigEndian);
+                    quint32 magic; in >> magic;
+                    if (magic == 0x5349475F) { // "SIG_"
+                        quint32 sigLength; in >> sigLength;
+                        if (sigLength > 0 && sigLength < static_cast<quint32>(sigCheckFile.size() - decryptionStartPos - 12)) {
+                            signatureSize = static_cast<qint64>(sigLength) + 12;
+                            qint64 savePos = inputFile.pos();
+                            // verifySignature now uses sigKey (Fix #3)
+                            validSignature = verifySignature(inputFile, sigKey, storedSignature);
+                            inputFile.seek(savePos);
+                            if (validSignature) {
+                                SECURE_LOG(DEBUG, "EncryptionEngine", "Valid signature found and verified");
+                            } else {
+                                SECURE_LOG(WARNING, "EncryptionEngine", "Digital signature validation failed");
+                            }
+                        } else {
+                            hasSignature = false;
+                            SECURE_LOG(WARNING, "EncryptionEngine", "Invalid signature length");
+                        }
+                    } else {
+                        hasSignature = false;
+                        SECURE_LOG(DEBUG, "EncryptionEngine", "No SIG_ marker found");
+                    }
+                }
+                sigCheckFile.close();
+            }
+        }
+
+        if (hasSignature && !validSignature && enforceIntegrity) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                "Integrity check failed: digital signature did not verify — aborting decryption");
+            return false;
+        }
+
+        // Seek to the start of ciphertext.
         inputFile.seek(decryptionStartPos);
-        
-        // Create a temporary buffer for content without signature if needed
+
+        // Special handling for AEAD ciphers
+        bool isAEADCipher = algorithm.contains("GCM") || algorithm.contains("CCM") ||
+                            algorithm.contains("ChaCha20-Poly1305");
+        if (isAEADCipher) {
+            useHMAC = false;
+        }
+
         if (hasSignature && signatureSize > 0) {
-            // Determine actual encrypted data size (without signature)
             qint64 encryptedSize = inputFile.size() - decryptionStartPos - signatureSize;
-            
             if (encryptedSize > 0) {
-                SECURE_LOG(DEBUG, "EncryptionEngine", "Extracting encrypted data without signature: " + 
-                           QString::number(encryptedSize) + " bytes");
-                
-                // Create a temporary file with the proper header and encrypted content
-                // Use a more secure location than default /tmp
+                SECURE_LOG(DEBUG, "EncryptionEngine",
+                    "Extracting encrypted data without signature: " + QString::number(encryptedSize) + " bytes");
+
                 QString secureDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-                // Create directory if it doesn't exist
                 QDir().mkpath(secureDir);
-                // Create temporary file in our secure app-specific directory
                 QTemporaryFile tempFile(secureDir + QDir::separator() + "opencryptui_XXXXXX");
-                
-                // Set restrictive permissions - only readable by current user
                 tempFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-                
+
                 if (tempFile.open()) {
-                    // Read salt and IV from original file
-                    inputFile.seek(customHeader.size());
-                    QByteArray header = inputFile.read(salt.size() + iv.size());
-                    
-                    // Write header to temporary file
-                    tempFile.write(header);
-                    
-                    // Now read and write the encrypted content without the signature
                     inputFile.seek(decryptionStartPos);
                     QByteArray buffer(4096, 0);
                     qint64 totalBytesRead = 0;
-                    
                     while (totalBytesRead < encryptedSize) {
                         qint64 bytesToRead = qMin(encryptedSize - totalBytesRead, static_cast<qint64>(buffer.size()));
                         qint64 bytesRead = inputFile.read(buffer.data(), bytesToRead);
-                        
-                        if (bytesRead <= 0) {
-                            break;
-                        }
-                        
+                        if (bytesRead <= 0) break;
                         tempFile.write(buffer.data(), bytesRead);
                         totalBytesRead += bytesRead;
                     }
-                    
                     tempFile.flush();
-                    
+
                     if (totalBytesRead == encryptedSize) {
-                        // Seek to the beginning of encrypted data in the temp file (past salt and IV)
-                        tempFile.seek(salt.size() + iv.size());
-                        
-                        // Decrypt from the temp file
-                        success = m_currentProvider->decrypt(tempFile, outputFile, key, iv, algorithm, useHMAC || enforceIntegrity);
-                        
+                        tempFile.seek(0);
+                        success = m_currentProvider->decrypt(tempFile, outputFile, encKey, iv, algorithm, useHMAC || enforceIntegrity);
                         SECURE_LOG(DEBUG, "EncryptionEngine", QString("Decryption %1").arg(success ? "succeeded" : "failed"));
                     } else {
-                        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read complete encrypted data: expected " + 
-                                  QString::number(encryptedSize) + " bytes, got " + QString::number(totalBytesRead));
+                        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                            "Failed to read complete encrypted data: expected " +
+                            QString::number(encryptedSize) + " bytes, got " + QString::number(totalBytesRead));
                         success = false;
                     }
                 } else {
@@ -326,16 +426,15 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
                     success = false;
                 }
             } else {
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Invalid encrypted data size: " + QString::number(encryptedSize));
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                    "Invalid encrypted data size: " + QString::number(encryptedSize));
                 success = false;
             }
         } else {
-            // No signature detected, do normal decryption
-            success = m_currentProvider->decrypt(inputFile, outputFile, key, iv, algorithm, useHMAC || enforceIntegrity);
+            success = m_currentProvider->decrypt(inputFile, outputFile, encKey, iv, algorithm, useHMAC || enforceIntegrity);
         }
     }
 
-    // File close, partial-output removal, and key zeroization are handled by the cleanup guard above.
     return success;
 }
 

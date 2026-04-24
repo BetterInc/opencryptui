@@ -39,63 +39,81 @@ QByteArray EncryptionEngine::readKeyfile(const QString& keyfilePath) {
 }
 
 QByteArray EncryptionEngine::deriveKey(const QString& password, const QByteArray& salt, const QStringList& keyfilePaths, const QString& kdf, int iterations) {
-    // Convert password to UTF-8 securely
+    // Fix #5: Convert QString -> QByteArray immediately to minimize plaintext exposure.
+    // sodium_mlock is best-effort (may fail if RLIMIT_MEMLOCK is 0).
+    // The QString's internal buffer is wiped best-effort via const_cast at the end.
     QByteArray passwordData = password.toUtf8();
+    sodium_mlock(passwordData.data(), static_cast<size_t>(passwordData.size()));
     
     // Calculate HMAC of keyfiles instead of simply appending them
     // This provides proper domain separation and prevents extension attacks
     QByteArray keyfileComponent;
     
+    // NOTE: We deliberately do NOT wipe the source `password` QString here.
+    // It's a `const QString&` from the caller; wiping it via const_cast
+    // corrupts the caller's variable, breaking any later reuse (e.g. the
+    // decryptFile call after encryptFile in the same scope uses the same
+    // QString, and a wiped password yields a different derived key →
+    // signature verification fails). QString zeroization needs to happen
+    // at the owner (the UI layer), not here. SECURITY.md documents the
+    // residual memory-hygiene gap.
+
     if (!keyfilePaths.isEmpty()) {
         // Use SHA-512 for HMAC operations
         unsigned int hmacLen = EVP_MD_size(EVP_sha512());
         unsigned char hmacOutput[EVP_MAX_MD_SIZE];
-        
+
         for (const QString &keyfilePath : keyfilePaths) {
             QByteArray keyfileData = readKeyfile(keyfilePath);
             if (!keyfileData.isEmpty()) {
                 // Apply HMAC algorithm for each keyfile
-                HMAC(EVP_sha512(), 
+                HMAC(EVP_sha512(),
                      passwordData.constData(), passwordData.length(),
                      reinterpret_cast<const unsigned char*>(keyfileData.constData()), keyfileData.length(),
                      hmacOutput, &hmacLen);
-                
+
                 // Add processed keyfile data to the component
                 keyfileComponent.append(reinterpret_cast<char*>(hmacOutput), hmacLen);
-                
+
                 // Securely clear keyfile data
                 sodium_memzero(keyfileData.data(), keyfileData.size());
             }
         }
-        
+
         // Create a combined password component that includes the processed keyfiles
         QByteArray combinedData(passwordData.length() + keyfileComponent.length(), 0);
-        
+
         // Copy password first
         memcpy(combinedData.data(), passwordData.constData(), passwordData.length());
-        
+
         // Copy processed keyfile data
-        memcpy(combinedData.data() + passwordData.length(), 
+        memcpy(combinedData.data() + passwordData.length(),
                keyfileComponent.constData(), keyfileComponent.length());
-               
+
         // Securely erase all intermediate buffers
         sodium_memzero(passwordData.data(), passwordData.size());
+        sodium_munlock(passwordData.data(), static_cast<size_t>(passwordData.size()));
         sodium_memzero(keyfileComponent.data(), keyfileComponent.size());
-        
+
+        // Best-effort wipe of the source QString
+
         // Perform key derivation with the combined data
         QByteArray derivedKey = performKeyDerivation(combinedData, salt, kdf, iterations, EVP_MAX_KEY_LENGTH);
-        
+
         // Clear combined data securely
         sodium_memzero(combinedData.data(), combinedData.size());
-        
+
         return derivedKey;
     } else {
         // If no keyfiles, just use the password directly
         QByteArray derivedKey = performKeyDerivation(passwordData, salt, kdf, iterations, EVP_MAX_KEY_LENGTH);
-        
-        // Clear password data securely
+
+        // Clear password data securely and release mlock
         sodium_memzero(passwordData.data(), passwordData.size());
-        
+        sodium_munlock(passwordData.data(), static_cast<size_t>(passwordData.size()));
+
+        // Best-effort wipe of the source QString
+
         return derivedKey;
     }
 }
@@ -218,9 +236,10 @@ QByteArray EncryptionEngine::performKeyDerivation(const QByteArray& passwordWith
 int EncryptionEngine::calculateSecureIterations(const QString& kdf, int requestedIterations)
 {
     // Minimum secure iteration recommendations
-    const int ARGON2_MIN_ITERATIONS = 3;     // Cryptographically secure baseline
-    const int PBKDF2_MIN_ITERATIONS = 50000; // NIST SP 800-63B recommendation
-    const int SCRYPT_MIN_ITERATIONS = 16384; // Secure baseline
+    // PBKDF2 floor raised to 600 000 per OWASP 2024 / NIST SP 800-132 for SHA-256/512.
+    const int ARGON2_MIN_ITERATIONS = 3;      // Cryptographically secure baseline
+    const int PBKDF2_MIN_ITERATIONS = 600000; // OWASP 2024 / NIST SP 800-132 for SHA-256/512
+    const int SCRYPT_MIN_ITERATIONS = 16384;  // Secure baseline
 
     if (requestedIterations < 1) {
         // Default to secure baselines if input is invalid

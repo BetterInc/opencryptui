@@ -106,7 +106,50 @@ public:
 
 private:
     // Removed lastIv storage for security reasons
-    
+
+    // -------------------------------------------------------------------------
+    // OCUI file-format v2 header (Fix #2)
+    // On-disk layout:
+    //   [magic "OCUI" 4][format_version 1][algorithm_id 1][kdf_id 1][reserved 1]
+    //   [iterations uint32 BE 4]   -- total header = 12 bytes
+    //   [salt 32][iv N][ciphertext][sig trailer]
+    //
+    // The entire prefix (including algorithm_id / kdf_id / iterations) is covered
+    // by the Ed25519 signature because generateDigitalSignature seeks to 0 and
+    // reads the whole file before the trailer is appended.
+    // -------------------------------------------------------------------------
+    static constexpr quint32 OCUI_MAGIC       = 0x4F435549u; // "OCUI"
+    static constexpr quint8  OCUI_FORMAT_VER  = 2;
+    static constexpr int     OCUI_HEADER_SIZE = 12; // magic(4)+ver(1)+alg(1)+kdf(1)+rsv(1)+iters(4)
+
+    // Algorithm IDs
+    static constexpr quint8 ALG_ID_AES256_GCM        = 0x01;
+    static constexpr quint8 ALG_ID_CHACHA20_POLY1305  = 0x02;
+    static constexpr quint8 ALG_ID_AES256_CTR         = 0x03;
+    static constexpr quint8 ALG_ID_AES256_CBC         = 0x04;
+    static constexpr quint8 ALG_ID_AES128_GCM         = 0x05;
+    static constexpr quint8 ALG_ID_AES128_CTR         = 0x06;
+    static constexpr quint8 ALG_ID_AES192_GCM         = 0x07;
+    static constexpr quint8 ALG_ID_AES192_CTR         = 0x08;
+    static constexpr quint8 ALG_ID_AES128_CBC         = 0x09;
+    static constexpr quint8 ALG_ID_AES192_CBC         = 0x0A;
+    static constexpr quint8 ALG_ID_CAMELLIA256_CBC     = 0x0B;
+    static constexpr quint8 ALG_ID_CAMELLIA128_CBC     = 0x0C;
+    static constexpr quint8 ALG_ID_UNKNOWN            = 0xFF;
+
+    // KDF IDs
+    static constexpr quint8 KDF_ID_PBKDF2  = 0x01;
+    static constexpr quint8 KDF_ID_ARGON2  = 0x02;
+    static constexpr quint8 KDF_ID_SCRYPT  = 0x03;
+    static constexpr quint8 KDF_ID_UNKNOWN = 0xFF;
+
+    // Helpers
+    static quint8 algorithmId(const QString& algorithm);
+    static QString algorithmFromId(quint8 id);
+    static quint8 kdfId(const QString& kdf);
+    static QString kdfFromId(quint8 id);
+    static int ivSizeForAlgorithm(const QString& algorithm); // Fix #7
+
     // Vector to hold unique pointers to providers
     std::vector<std::unique_ptr<CryptoProvider>> m_providers;
     
@@ -140,10 +183,17 @@ private:
     CryptoProvider* findProvider(const QString& providerName);
     
     // Tamper-evidence and digital signature methods
-    QByteArray generateDigitalSignature(QFile& inputFile, const QByteArray& key);
+    QByteArray generateDigitalSignature(QFile& inputFile, const QByteArray& masterKey);
     void appendSignature(QFile& outputFile, const QByteArray& signature);
-    bool verifySignature(QFile& inputFile, const QByteArray& key, QByteArray& storedSignature);
+    bool verifySignature(QFile& inputFile, const QByteArray& masterKey, QByteArray& storedSignature);
     quint32 calculateCRC32(const QByteArray& data);
+
+    // Fix #3: HKDF-based key separation. Derives encryption_key (32 B) and
+    // signing_seed (32 B) from a 64-byte master via libsodium crypto_kdf_derive_from_key.
+    // master is zeroized inside.
+    static bool deriveSubkeys(QByteArray& master,
+                              QByteArray& encryptionKey,
+                              QByteArray& signingKey);
     
     // Hardware RNG support
     bool checkHardwareRngSupport();
