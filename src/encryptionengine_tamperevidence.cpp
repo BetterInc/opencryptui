@@ -45,14 +45,19 @@ QByteArray EncryptionEngine::generateDigitalSignature(QFile& inputFile, const QB
         return QByteArray(); // Return empty signature on error
     }
     
-    // Use the hash as seed for signature key
-    memcpy(signatureKey.data(), hash, std::min<size_t>(hashLen, crypto_sign_SECRETKEYBYTES));
-    
-    // Generate corresponding public key
+    // Derive the 32-byte Ed25519 seed from the hash into a separate buffer so
+    // that crypto_sign_seed_keypair's sk output and seed input never alias.
+    // (When they alias, the sk buffer is partially overwritten before the seed
+    // is fully consumed, producing a signing key that does NOT match the
+    // public key. Self-verification then fails even without any tampering.)
+    QByteArray seed(crypto_sign_SEEDBYTES, 0);
+    memcpy(seed.data(), hash, std::min<size_t>(hashLen, crypto_sign_SEEDBYTES));
+
     QByteArray publicKey(crypto_sign_PUBLICKEYBYTES, 0);
-    crypto_sign_seed_keypair(reinterpret_cast<unsigned char*>(publicKey.data()), 
+    crypto_sign_seed_keypair(reinterpret_cast<unsigned char*>(publicKey.data()),
                            reinterpret_cast<unsigned char*>(signatureKey.data()),
-                           reinterpret_cast<const unsigned char*>(signatureKey.constData()));
+                           reinterpret_cast<const unsigned char*>(seed.constData()));
+    sodium_memzero(seed.data(), seed.size());
     
     // Hash the file content in chunks
     mdctx = EVP_MD_CTX_new();
@@ -93,7 +98,7 @@ QByteArray EncryptionEngine::generateDigitalSignature(QFile& inputFile, const QB
     // Create signature
     QByteArray signature(crypto_sign_BYTES + hashLen, 0);
     unsigned long long signatureLen;
-    
+
     crypto_sign_detached(reinterpret_cast<unsigned char*>(signature.data()),
                         &signatureLen,
                         hash,
@@ -116,29 +121,24 @@ QByteArray EncryptionEngine::generateDigitalSignature(QFile& inputFile, const QB
     return signature;
 }
 
-// Append signature to encrypted file
+// Append signature to encrypted file.
+// On-disk trailer layout (must match verifySignature / cryptOperation's detector):
+//   [signature N bytes][magic 4][sigLen 4][CRC 4]
+// The 12-byte fixed trailer sits at size-12..size, so the detector can
+// read magic/sigLen from a known position without first knowing N.
 void EncryptionEngine::appendSignature(QFile& outputFile, const QByteArray& signature)
 {
-    // Go to end of file
     outputFile.seek(outputFile.size());
-    
-    // Write signature length and signature
+
+    // Write the signature body first, then the fixed trailer.
+    outputFile.write(signature);
+
     QDataStream out(&outputFile);
     out.setByteOrder(QDataStream::BigEndian);
-    
-    // Write a magic number for signature identification
-    out << quint32(0x5349475F); // "SIG_"
-    
-    // Write signature length
-    out << quint32(signature.size());
-    
-    // Write the signature itself
-    outputFile.write(signature);
-    
-    // Write a CRC32 checksum for the signature block
-    quint32 crc = calculateCRC32(signature);
-    out << crc;
-    
+    out << quint32(0x5349475F);          // magic "SIG_"
+    out << quint32(signature.size());    // sigLen
+    out << calculateCRC32(signature);    // CRC32 over the signature bytes
+
     SECURE_LOG(DEBUG, "EncryptionEngine", QString("Appended digital signature (%1 bytes) to encrypted file").arg(signature.size()));
 }
 
@@ -208,7 +208,7 @@ bool EncryptionEngine::verifySignature(QFile& inputFile, const QByteArray& key, 
         inputFile.seek(originalPosition);
         return false;
     }
-    
+
     // Split signature and public key
     if (storedSignature.size() < crypto_sign_BYTES + crypto_sign_PUBLICKEYBYTES) {
         SECURE_LOG(WARNING, "EncryptionEngine", "Signature too short");
@@ -252,13 +252,14 @@ bool EncryptionEngine::verifySignature(QFile& inputFile, const QByteArray& key, 
         return false;
     }
     
-    // Copy derived key
-    memcpy(derivedPrivateKey.data(), hash, std::min<size_t>(hashLen, crypto_sign_SECRETKEYBYTES));
-    
-    // Generate expected public key
+    // Same separate-seed fix as in generateDigitalSignature — sk and seed must
+    // not alias or the derived public key will not match the real signing key.
+    QByteArray seed(crypto_sign_SEEDBYTES, 0);
+    memcpy(seed.data(), hash, std::min<size_t>(hashLen, crypto_sign_SEEDBYTES));
     crypto_sign_seed_keypair(reinterpret_cast<unsigned char*>(expectedPublicKey.data()),
                             reinterpret_cast<unsigned char*>(derivedPrivateKey.data()),
-                            reinterpret_cast<const unsigned char*>(derivedPrivateKey.constData()));
+                            reinterpret_cast<const unsigned char*>(seed.constData()));
+    sodium_memzero(seed.data(), seed.size());
     
     // Securely clear sensitive data
     sodium_memzero(derivedPrivateKey.data(), derivedPrivateKey.size());

@@ -40,7 +40,9 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         return false;
     }
 
-    if (!outputFile.open(QIODevice::WriteOnly))
+    // ReadWrite (not WriteOnly) so the encrypt path can re-read the ciphertext
+    // it just wrote in order to sign it before appending the trailer.
+    if (!outputFile.open(QIODevice::ReadWrite | QIODevice::Truncate))
     {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Failed to open output file: %1").arg(outputPath));
         return false;
@@ -167,22 +169,20 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
             return false;
         }
 
-        // Generate digital signature for tamper evidence
-        QByteArray signature;
-        if (enforceIntegrity) {
-            // Create Ed25519 signature of the input data for tamper evidence
-            signature = generateDigitalSignature(inputFile, key);
-            // Reset file position for encryption
-            inputFile.seek(0);
-        }
-        
-        // Perform encryption
+        // Perform encryption first; the signature must cover the same bytes
+        // that verifySignature() hashes on the decrypt side, i.e. the entire
+        // output file EXCEPT the 12-byte trailer and signature body.
         success = m_currentProvider->encrypt(inputFile, outputFile, key, iv, algorithm, useHMAC || enforceIntegrity);
-        
-        // Append digital signature if enabled
+
         if (enforceIntegrity && success) {
-            // Add signature and validation data to the end of the file
-            appendSignature(outputFile, signature);
+            outputFile.flush();
+            QByteArray signature = generateDigitalSignature(outputFile, key);
+            if (signature.isEmpty()) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to generate tamper-evidence signature");
+                success = false;
+            } else {
+                appendSignature(outputFile, signature);
+            }
         }
     }
     else
