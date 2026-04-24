@@ -12,31 +12,9 @@
 #include <cpuid.h>
 #endif
 
-QByteArray EncryptionEngine::readKeyfile(const QString& keyfilePath) {
-    // Ensure the keyfile path is provided
-    if (keyfilePath.isEmpty()) {
-        return QByteArray();
-    }
-
-    // Open the keyfile
-    QFile keyfile(keyfilePath);
-    if (!keyfile.open(QIODevice::ReadOnly)) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", 
-            QString("Failed to open keyfile at path: %1").arg(keyfilePath));
-        return QByteArray();
-    }
-
-    // Read the entire content of the keyfile
-    QByteArray keyfileData = keyfile.readAll();
-    keyfile.close();
-
-    if (keyfileData.isEmpty()) {
-        SECURE_LOG(WARNING, "EncryptionEngine", 
-            QString("Keyfile is empty or could not be read: %1").arg(keyfilePath));
-    }
-
-    return keyfileData;
-}
+// readKeyfile() moved to encryptionengine_keyfile.cpp — pure disk I/O,
+// kept here only because it used to share a translation unit with
+// deriveKey().
 
 QByteArray EncryptionEngine::deriveKey(const QString& password, const QByteArray& salt, const QStringList& keyfilePaths, const QString& kdf, int iterations) {
     // Fix #5: Convert QString -> QByteArray immediately to minimize plaintext exposure.

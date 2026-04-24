@@ -76,7 +76,9 @@ set(LIBRARY_SOURCES
     src/encryptionengine_init.cpp
     src/encryptionengine_fileops.cpp
     src/encryptionengine_keyderivation.cpp
+    src/encryptionengine_keyfile.cpp
     src/encryptionengine_crypto.cpp
+    src/encryptionengine_tables.cpp
     src/encryptionengine_disk.cpp
     src/encryptionengine_diskops.cpp
     src/encryptionengine_tamperevidence.cpp
