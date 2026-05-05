@@ -114,8 +114,10 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
             return false;
         }
 
-        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Generated salt (hex): %1").arg(QString(salt.toHex())));
-        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Generated IV (hex): %1").arg(QString(iv.toHex())));
+        // SECURITY: do NOT log salt or IV bytes — even at DEBUG level. While
+        // they aren't secret per se, logging them aids forensic reconstruction
+        // and the SecureLogger redactor only catches keywords, not values.
+        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Generated salt (%1 bytes) and IV (%2 bytes)").arg(salt.size()).arg(iv.size()));
 
         // Derive master key, then split into enc + sig sub-keys (Fix #3).
         masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
@@ -263,8 +265,8 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
             return false;
         }
 
-        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Read salt (hex): %1").arg(QString(salt.toHex())));
-        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Read IV (hex): %1").arg(QString(iv.toHex())));
+        // SECURITY: redacted — see comment at the encrypt-side logging above.
+        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Read salt (%1 bytes) and IV (%2 bytes)").arg(salt.size()).arg(iv.size()));
 
         // Derive master key, then split into enc + sig sub-keys (Fix #3).
         masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
@@ -590,8 +592,10 @@ bool EncryptionEngine::performAuthenticatedEncryption(EVP_CIPHER_CTX *ctx, const
 
     if (isAuthenticatedMode)
     {
-        SECURE_LOG(DEBUG, "EncryptionEngine", 
-            QString("Authentication tag: %1").arg(QString(tag.toHex())));
+        // SECURITY: do not log the AEAD tag value — it's an intermediate
+        // crypto artifact and aids forensic reconstruction.
+        SECURE_LOG(DEBUG, "EncryptionEngine",
+            QString("Authentication tag computed (%1 bytes)").arg(tag.size()));
     }
 
     return true;
@@ -632,8 +636,9 @@ bool EncryptionEngine::performAuthenticatedDecryption(EVP_CIPHER_CTX *ctx, const
     tag = encryptedContent.right(16);
     encryptedContent.chop(16); // Remove the tag from the encrypted content
 
-    SECURE_LOG(DEBUG, "EncryptionEngine", 
-        QString("Tag read for decryption: %1").arg(QString(tag.toHex())));
+    // SECURITY: do not log the AEAD tag value (intermediate crypto artifact).
+    SECURE_LOG(DEBUG, "EncryptionEngine",
+        QString("AEAD tag read (%1 bytes)").arg(tag.size()));
 
     // Initialize decryption operation
     if (!EVP_DecryptInit_ex(ctx, cipher, nullptr, 
