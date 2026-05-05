@@ -21,6 +21,7 @@
 #include <QDebug>
 #include <sodium.h>
 #include <openssl/evp.h>
+#include <cstdio>
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -248,9 +249,9 @@ static QByteArray deriveSigningKey(EncryptionEngine& eng,
 
 static int check(bool ok, const char* label)
 {
-    if (!ok) { qCritical() << "FAIL:" << label; return 1; }
-    qInfo()  << "PASS:" << label;
-    return 0;
+    std::fprintf(stderr, "%s: %s\n", ok ? "PASS" : "FAIL", label);
+    std::fflush(stderr);
+    return ok ? 0 : 1;
 }
 
 // TC1: 10 MiB round-trip.
@@ -264,16 +265,16 @@ static int tc1_roundtrip10MiB(EncryptionEngine& eng, const QString& dir)
 
     bool ok = eng.encryptFile(plain, "test-password-v3", "AES-256-GCM", "PBKDF2", 600000,
                               false, QString());
-    if (!check(ok, "TC1: encrypt 10 MiB")) return 1;
+    if (check(ok, "TC1: encrypt 10 MiB")) return 1;
 
     QFile::remove(plain);
 
     ok = eng.decryptFile(ct, "test-password-v3", "AES-256-GCM", "PBKDF2", 600000,
                          false, QString());
-    if (!check(ok, "TC1: decrypt 10 MiB")) return 1;
+    if (check(ok, "TC1: decrypt 10 MiB")) return 1;
 
     QByteArray got = readFile(plain);
-    if (!check(got == payload, "TC1: 10 MiB round-trip byte-identical")) return 1;
+    if (check(got == payload, "TC1: 10 MiB round-trip byte-identical")) return 1;
 
     QFile::remove(plain);
     QFile::remove(ct);
@@ -291,7 +292,7 @@ static int tc2_naiveTamperChunk3(EncryptionEngine& eng, const QString& dir)
 
     bool ok = eng.encryptFile(plain, "test-password-v3", "AES-256-GCM", "PBKDF2", 600000,
                               false, QString());
-    if (!check(ok, "TC2: encrypt")) return 1;
+    if (check(ok, "TC2: encrypt")) return 1;
 
     QFile::remove(plain);
 
@@ -322,14 +323,14 @@ static int tc3_attackerResigns(EncryptionEngine& eng, const QString& dir)
 
     bool ok = eng.encryptFile(plain, "test-password-v3", "AES-256-GCM", "PBKDF2", 600000,
                               false, QString());
-    if (!check(ok, "TC3: encrypt")) return 1;
+    if (check(ok, "TC3: encrypt")) return 1;
 
     QFile::remove(plain);
 
     // Derive the signing key (attacker knows the password).
     QByteArray sigKey = deriveSigningKey(eng, ct, "test-password-v3",
                                          "AES-256-GCM", "PBKDF2", 600000);
-    if (!check(!sigKey.isEmpty(), "TC3: derived signing key")) return 1;
+    if (check(!sigKey.isEmpty(), "TC3: derived signing key")) return 1;
 
     // Tamper chunk 3.
     const qint64 offset = chunkDataOffset(3, 1048576) + 42;
@@ -360,16 +361,16 @@ static int tc4_subChunkFile(EncryptionEngine& eng, const QString& dir)
 
     bool ok = eng.encryptFile(plain, "test-password-v3", "AES-256-GCM", "PBKDF2", 600000,
                               false, QString());
-    if (!check(ok, "TC4: encrypt <1 MiB")) return 1;
+    if (check(ok, "TC4: encrypt <1 MiB")) return 1;
 
     QFile::remove(plain);
 
     ok = eng.decryptFile(ct, "test-password-v3", "AES-256-GCM", "PBKDF2", 600000,
                          false, QString());
-    if (!check(ok, "TC4: decrypt <1 MiB")) return 1;
+    if (check(ok, "TC4: decrypt <1 MiB")) return 1;
 
     QByteArray got = readFile(plain);
-    if (!check(got == payload, "TC4: <1 MiB round-trip byte-identical")) return 1;
+    if (check(got == payload, "TC4: <1 MiB round-trip byte-identical")) return 1;
 
     QFile::remove(plain);
     QFile::remove(ct);
@@ -387,16 +388,16 @@ static int tc5_exact2MiB(EncryptionEngine& eng, const QString& dir)
 
     bool ok = eng.encryptFile(plain, "test-password-v3", "AES-256-GCM", "PBKDF2", 600000,
                               false, QString());
-    if (!check(ok, "TC5: encrypt 2 MiB")) return 1;
+    if (check(ok, "TC5: encrypt 2 MiB")) return 1;
 
     QFile::remove(plain);
 
     ok = eng.decryptFile(ct, "test-password-v3", "AES-256-GCM", "PBKDF2", 600000,
                          false, QString());
-    if (!check(ok, "TC5: decrypt 2 MiB")) return 1;
+    if (check(ok, "TC5: decrypt 2 MiB")) return 1;
 
     QByteArray got = readFile(plain);
-    if (!check(got == payload, "TC5: 2 MiB round-trip byte-identical")) return 1;
+    if (check(got == payload, "TC5: 2 MiB round-trip byte-identical")) return 1;
 
     QFile::remove(plain);
     QFile::remove(ct);

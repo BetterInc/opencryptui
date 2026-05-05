@@ -424,11 +424,7 @@ add_test(NAME EngineKeyfile         COMMAND TestEngineKeyfile)
 add_test(NAME EngineCipherMatrix    COMMAND TestEngineCipherMatrix)
 add_test(NAME EngineKdf             COMMAND TestEngineKdf)
 add_test(NAME TestBenchmark         COMMAND TestBenchmark)
-# TODO: re-register once we've fixed the test harness — every test case prints
-# "PASS encrypt" then nothing, so decrypt is failing silently. The implementation
-# itself is exercised correctly by the existing AEAD tests (EngineCipherMatrix,
-# EngineKeyfile, EngineTamper, TestRoundtripGCM) which all run on v3 framing now.
-# add_test(NAME EnginePerChunk        COMMAND TestEnginePerChunk)
+add_test(NAME EnginePerChunk        COMMAND TestEnginePerChunk)
 
 # Copy test runner scripts
 configure_file(
