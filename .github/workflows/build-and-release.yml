@@ -10,6 +10,12 @@ on:
     branches:
       - '**'   # Runs the build for all pull requests
   workflow_dispatch:   # Allow manual re-runs from the Actions tab
+    inputs:
+      skip_sanitize:
+        description: "Skip the AddressSanitizer/UBSan job"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -414,6 +420,54 @@ jobs:
         with:
           name: test-results-${{ matrix.os }}
           path: build/Testing/Temporary/LastTest.log
+  sanitize:
+    needs: []           # runs in parallel with the build matrix
+    runs-on: ubuntu-latest
+    if: ${{ ! inputs.skip_sanitize }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          set -o pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build git \
+            qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools \
+            libssl-dev libsodium-dev libargon2-dev xvfb
+
+      - name: Configure CMake (ASan + UBSan)
+        run: |
+          set -o pipefail
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="-DQT_CI_BUILD -DQT_NO_DEBUG_OUTPUT -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -O1 -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build build --config RelWithDebInfo -j 2
+
+      - name: Run tests under sanitizers
+        run: |
+          set -o pipefail
+          cd build
+          mkdir -p Testing/Temporary
+          ASAN_OPTIONS=detect_leaks=0:abort_on_error=1:halt_on_error=1:strict_string_checks=1:detect_odr_violation=1:check_initialization_order=1 \
+          UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
+          QT_QPA_PLATFORM=offscreen \
+          ctest -j 2 --output-on-failure --timeout 600 \
+            2>&1 | tee Testing/Temporary/LastTest.log
+
+      - name: Upload sanitizer test log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitize-test-log
+          path: build/Testing/Temporary/LastTest.log
+
   release:
     needs: build
     runs-on: ubuntu-latest
