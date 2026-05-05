@@ -616,3 +616,125 @@ Hardening flags applied
   ${OCUI_HARDENING_LIST}
 ")
 message(STATUS "Wrote ${CMAKE_CURRENT_BINARY_DIR}/BUILD_PROVENANCE.txt")
+
+# ---------------------------------------------------------------------------
+# libFuzzer harnesses — opt-in, Clang-only, never part of the default build.
+#
+# Enable with:
+#   cmake -DOCUI_ENABLE_FUZZ=ON -DCMAKE_C_COMPILER=clang \
+#         -DCMAKE_CXX_COMPILER=clang++ <source-dir>
+#
+# Three executables are produced:
+#   FuzzOCUIHeader        — stresses the v2/v3 header parser via decryptFile
+#   FuzzChunkDecoder      — stresses v3 chunk framing and decryptChunk
+#   FuzzSignatureVerifier — stresses the Ed25519 + CRC32 trailer verifier
+#
+# None are registered with add_test() — fuzzers run indefinitely by default
+# and are driven via the 'fuzz' convenience target (see below).
+# ---------------------------------------------------------------------------
+option(OCUI_ENABLE_FUZZ "Build libFuzzer harnesses (requires Clang)" OFF)
+
+if(OCUI_ENABLE_FUZZ)
+    if(NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+            CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"))
+        message(FATAL_ERROR
+            "OCUI_ENABLE_FUZZ=ON requires Clang (CMAKE_CXX_COMPILER_ID is "
+            "'${CMAKE_CXX_COMPILER_ID}').  Re-run with "
+            "-DCMAKE_CXX_COMPILER=clang++")
+    endif()
+
+    message(STATUS "Building libFuzzer harnesses (Clang ${CMAKE_CXX_COMPILER_VERSION})")
+
+    # Compile + link flags applied to every fuzzer target.
+    # -fsanitize=fuzzer provides the LLVMFuzzerTestOneInput entry-point driver.
+    # -fsanitize=address,undefined catches memory errors and UB at runtime.
+    # -O1 -g -fno-omit-frame-pointer give usable stack traces without making
+    # the build too slow.
+    # NOTE: Do NOT add -D_FORTIFY_SOURCE here; it conflicts with -O1.
+    set(FUZZ_COMPILE_FLAGS
+        -fsanitize=fuzzer,address,undefined
+        -O1
+        -g
+        -fno-omit-frame-pointer
+    )
+    set(FUZZ_LINK_FLAGS
+        -fsanitize=fuzzer,address,undefined
+    )
+
+    # Helper function: create one fuzzer executable.
+    function(add_fuzzer name source)
+        add_executable(${name} ${source})
+        set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+        target_compile_options(${name} PRIVATE ${FUZZ_COMPILE_FLAGS})
+        target_link_options(${name}    PRIVATE ${FUZZ_LINK_FLAGS})
+
+        # Suppress the project-wide hardening flags that conflict with fuzzer
+        # instrumentation (e.g. -fstack-clash-protection and -Werror=format-security
+        # can interact poorly with the fuzzer runtime).
+        target_compile_definitions(${name} PRIVATE -DTEST_MODE -DENABLE_LOGGING)
+
+        target_include_directories(${name} PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/logging
+            ${CMAKE_CURRENT_SOURCE_DIR}/src
+            ${Qt5Core_INCLUDE_DIRS}
+            ${OPENSSL_INCLUDE_DIR}
+            ${SODIUM_INCLUDE_DIRS}
+            ${SODIUM_INCLUDE_DIR}
+            ${ARGON2_INCLUDE_DIRS}
+            ${ARGON2_INCLUDE_DIR}
+        )
+
+        target_link_libraries(${name} PRIVATE
+            EncryptionLib
+            Qt5::Core Qt5::Gui Qt5::Widgets
+            OpenSSL::SSL OpenSSL::Crypto
+            argon2 sodium
+        )
+    endfunction()
+
+    add_fuzzer(FuzzOCUIHeader
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_ocui_header.cpp)
+
+    add_fuzzer(FuzzChunkDecoder
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_chunk_decoder.cpp)
+
+    add_fuzzer(FuzzSignatureVerifier
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_signature_verifier.cpp)
+
+    # Seed corpus directories — passed to each fuzzer so it starts from known
+    # good (and known bad) inputs rather than from scratch.
+    set(CORPUS_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/corpus/ocui_header")
+    set(CORPUS_CHUNK  "${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/corpus/chunk_decoder")
+    set(CORPUS_SIG    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/corpus/signature_verifier")
+
+    # 'fuzz' convenience target: run each fuzzer for 60 seconds then stop.
+    # Usage: cmake --build <build-dir> --target fuzz
+    # Each fuzzer's crash artifacts land in the build directory next to its
+    # binary; any crash-* file produced causes the fuzzer to exit with non-zero
+    # status, which propagates through the custom target.
+    add_custom_target(fuzz
+        COMMAND FuzzOCUIHeader
+                -max_total_time=60
+                -print_final_stats=1
+                -artifact_prefix=${CMAKE_CURRENT_BINARY_DIR}/crash-header-
+                ${CORPUS_HEADER}
+        COMMAND FuzzChunkDecoder
+                -max_total_time=60
+                -print_final_stats=1
+                -artifact_prefix=${CMAKE_CURRENT_BINARY_DIR}/crash-chunk-
+                ${CORPUS_CHUNK}
+        COMMAND FuzzSignatureVerifier
+                -max_total_time=60
+                -print_final_stats=1
+                -artifact_prefix=${CMAKE_CURRENT_BINARY_DIR}/crash-sigver-
+                ${CORPUS_SIG}
+        DEPENDS FuzzOCUIHeader FuzzChunkDecoder FuzzSignatureVerifier
+        COMMENT "Running each fuzzer for 60 s (OCUI_ENABLE_FUZZ=ON)"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+
+    message(STATUS "  Fuzz targets: FuzzOCUIHeader FuzzChunkDecoder FuzzSignatureVerifier")
+    message(STATUS "  Run smoke check: cmake --build <build-dir> --target fuzz")
+endif() # OCUI_ENABLE_FUZZ
