@@ -176,6 +176,8 @@ set(LIBRARY_SOURCES
     include/customlistwidget.h
     src/logging/secure_logger.cpp
     include/logging/secure_logger.h
+    src/secure_string.cpp
+    include/secure_string.h
     include/cryptoprovider.h
     src/opensslprovider.cpp
     src/opensslprovider_standard.cpp
@@ -412,6 +414,21 @@ add_engine_test(TestEngineCipherMatrix  tests/test_engine_cipher_matrix.cpp)
 add_engine_test(TestEngineKdf           tests/test_engine_kdf.cpp)
 add_engine_test(TestBenchmark           tests/test_benchmark.cpp)
 add_engine_test(TestEnginePerChunk      tests/test_engine_per_chunk.cpp)
+add_engine_test(TestSecureString        tests/test_secure_string.cpp)
+
+# End-to-end black-box test: exercises the shipped OpenCryptUI binary via
+# QProcess (startup smoke) plus engine round-trip and tamper-rejection cases
+# that mirror what the binary does at runtime.
+add_engine_test(TestEndToEndBlackbox    tests/test_endtoend_blackbox.cpp)
+# Inject the absolute path to the OpenCryptUI binary so the test can locate
+# it without relying on PATH or working-directory assumptions.
+target_compile_definitions(TestEndToEndBlackbox PRIVATE
+    OPENCRYPTUI_BINARY_PATH="${CMAKE_BINARY_DIR}/OpenCryptUI"
+)
+# QProcess is part of Qt5::Core (already linked by add_engine_test), but
+# ensure the dependency on the binary being built is expressed so that a
+# parallel build does not run the test before the binary is ready.
+add_dependencies(TestEndToEndBlackbox OpenCryptUI)
 
 # Add tests to CTest
 enable_testing()
@@ -425,6 +442,12 @@ add_test(NAME EngineCipherMatrix    COMMAND TestEngineCipherMatrix)
 add_test(NAME EngineKdf             COMMAND TestEngineKdf)
 add_test(NAME TestBenchmark         COMMAND TestBenchmark)
 add_test(NAME EnginePerChunk        COMMAND TestEnginePerChunk)
+add_test(NAME SecureString          COMMAND TestSecureString)
+add_test(NAME EndToEndBlackbox      COMMAND TestEndToEndBlackbox)
+set_tests_properties(EndToEndBlackbox PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    TIMEOUT 30
+)
 
 # Copy test runner scripts
 configure_file(
@@ -476,3 +499,82 @@ if(ENGINE_HARDENING_SUMMARY)
 else()
     message(STATUS "  (no hardening flags enabled — compiler too old or on an unsupported platform)")
 endif()
+
+# ---------------------------------------------------------------------------
+# Reproducible-build provenance.
+#
+# Goal: a security researcher can build OpenCryptUI from source, hash the
+# binary, and compare against a published reference. Two unrelated builds
+# of the same commit should produce byte-identical output.
+#
+# What we do here:
+#   - Pick up SOURCE_DATE_EPOCH from the commit timestamp if not already in
+#     the environment. GCC, ld, and other tooling honour this to suppress
+#     embedded build timestamps.
+#   - Add -Wl,--build-id=sha1 (ELF only) so the build-id is a deterministic
+#     hash of the input rather than a random uuid.
+#   - Emit BUILD_PROVENANCE.txt next to the binary with everything a
+#     reviewer needs to verify the build: commit, epoch, dep versions,
+#     compiler version, hardening flag set actually applied.
+# ---------------------------------------------------------------------------
+if(NOT DEFINED ENV{SOURCE_DATE_EPOCH})
+    execute_process(
+        COMMAND git -C ${CMAKE_SOURCE_DIR} log -1 --format=%ct
+        OUTPUT_VARIABLE _git_epoch
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+        RESULT_VARIABLE _git_rc)
+    if(_git_rc EQUAL 0 AND _git_epoch)
+        set(ENV{SOURCE_DATE_EPOCH} "${_git_epoch}")
+        message(STATUS "SOURCE_DATE_EPOCH: ${_git_epoch} (from git HEAD)")
+    endif()
+endif()
+
+if(NOT APPLE AND NOT MSVC)
+    foreach(_t EncryptionLib OpenCryptUI OpenCryptUITest TestRoundtrip)
+        if(TARGET ${_t})
+            target_link_options(${_t} PRIVATE -Wl,--build-id=sha1)
+        endif()
+    endforeach()
+endif()
+
+# Capture commit + dep versions for BUILD_PROVENANCE.txt
+execute_process(COMMAND git -C ${CMAKE_SOURCE_DIR} rev-parse HEAD
+    OUTPUT_VARIABLE OCUI_GIT_SHA OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET RESULT_VARIABLE _sha_rc)
+if(NOT _sha_rc EQUAL 0)
+    set(OCUI_GIT_SHA "unknown")
+endif()
+
+# Best-effort dep version detection.
+set(OCUI_OPENSSL_VERSION  "${OPENSSL_VERSION}")
+set(OCUI_SODIUM_VERSION   "${SODIUM_VERSION}")
+set(OCUI_ARGON2_VERSION   "${ARGON2_VERSION}")
+set(OCUI_QT5_VERSION      "${Qt5_VERSION}")
+set(OCUI_COMPILER_ID      "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
+
+string(REPLACE ";" "\n  " OCUI_HARDENING_LIST "${ENGINE_HARDENING_SUMMARY}")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/BUILD_PROVENANCE.txt
+"OpenCryptUI build provenance
+=============================
+Generated at configure time. Pair with the binary's SHA-256 to verify a build.
+
+Commit               : ${OCUI_GIT_SHA}
+SOURCE_DATE_EPOCH    : $ENV{SOURCE_DATE_EPOCH}
+Compiler             : ${OCUI_COMPILER_ID}
+CMake                : ${CMAKE_VERSION}
+Build type           : ${CMAKE_BUILD_TYPE}
+Target system        : ${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR}
+
+Dependencies
+------------
+OpenSSL              : ${OCUI_OPENSSL_VERSION}
+libsodium            : ${OCUI_SODIUM_VERSION}
+Argon2               : ${OCUI_ARGON2_VERSION}
+Qt5                  : ${OCUI_QT5_VERSION}
+
+Hardening flags applied
+-----------------------
+  ${OCUI_HARDENING_LIST}
+")
+message(STATUS "Wrote ${CMAKE_CURRENT_BINARY_DIR}/BUILD_PROVENANCE.txt")
