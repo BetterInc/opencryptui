@@ -1,4 +1,5 @@
 #include "encryptionengine.h"
+#include "secure_string.h"
 #include "logging/secure_logger.h"
 #include <QFile>
 #include <argon2.h>
@@ -17,16 +18,15 @@
 // deriveKey().
 
 QByteArray EncryptionEngine::deriveKey(const QString& password, const QByteArray& salt, const QStringList& keyfilePaths, const QString& kdf, int iterations) {
-    // Fix #5: Convert QString -> QByteArray immediately to minimize plaintext exposure.
-    // sodium_mlock is best-effort (may fail if RLIMIT_MEMLOCK is 0).
-    // The QString's internal buffer is wiped best-effort via const_cast at the end.
-    QByteArray passwordData = password.toUtf8();
-    sodium_mlock(passwordData.data(), static_cast<size_t>(passwordData.size()));
-    
+    // SecureString locks the UTF-8 bytes into RAM and zeroes them on destruction,
+    // eliminating any early-return leak paths that existed with the manual
+    // sodium_mlock / sodium_memzero / sodium_munlock pattern.
+    SecureString password_buf = SecureString::from_qstring(password);
+
     // Calculate HMAC of keyfiles instead of simply appending them
     // This provides proper domain separation and prevents extension attacks
     QByteArray keyfileComponent;
-    
+
     // NOTE: We deliberately do NOT wipe the source `password` QString here.
     // It's a `const QString&` from the caller; wiping it via const_cast
     // corrupts the caller's variable, breaking any later reuse (e.g. the
@@ -46,7 +46,7 @@ QByteArray EncryptionEngine::deriveKey(const QString& password, const QByteArray
             if (!keyfileData.isEmpty()) {
                 // Apply HMAC algorithm for each keyfile
                 HMAC(EVP_sha512(),
-                     passwordData.constData(), passwordData.length(),
+                     password_buf.data(), static_cast<int>(password_buf.size()),
                      reinterpret_cast<const unsigned char*>(keyfileData.constData()), keyfileData.length(),
                      hmacOutput, &hmacLen);
 
@@ -58,22 +58,18 @@ QByteArray EncryptionEngine::deriveKey(const QString& password, const QByteArray
             }
         }
 
-        // Create a combined password component that includes the processed keyfiles
-        QByteArray combinedData(passwordData.length() + keyfileComponent.length(), 0);
+        // Create a combined password+keyfile buffer.
+        QByteArray combinedData(static_cast<int>(password_buf.size()) + keyfileComponent.length(), 0);
 
         // Copy password first
-        memcpy(combinedData.data(), passwordData.constData(), passwordData.length());
+        memcpy(combinedData.data(), password_buf.data(), password_buf.size());
 
         // Copy processed keyfile data
-        memcpy(combinedData.data() + passwordData.length(),
+        memcpy(combinedData.data() + static_cast<int>(password_buf.size()),
                keyfileComponent.constData(), keyfileComponent.length());
 
-        // Securely erase all intermediate buffers
-        sodium_memzero(passwordData.data(), passwordData.size());
-        sodium_munlock(passwordData.data(), static_cast<size_t>(passwordData.size()));
+        // Securely erase the keyfile component; password_buf is wiped by its destructor.
         sodium_memzero(keyfileComponent.data(), keyfileComponent.size());
-
-        // Best-effort wipe of the source QString
 
         // Perform key derivation with the combined data
         QByteArray derivedKey = performKeyDerivation(combinedData, salt, kdf, iterations, EVP_MAX_KEY_LENGTH);
@@ -83,14 +79,19 @@ QByteArray EncryptionEngine::deriveKey(const QString& password, const QByteArray
 
         return derivedKey;
     } else {
-        // If no keyfiles, just use the password directly
-        QByteArray derivedKey = performKeyDerivation(passwordData, salt, kdf, iterations, EVP_MAX_KEY_LENGTH);
+        // No keyfiles: pass the password directly to performKeyDerivation.
+        // performKeyDerivation currently takes a QByteArray, so we must make a
+        // temporary copy here.
+        // TODO: Residual leak surface — this temporary QByteArray exists in
+        // unprotected heap memory until sodium_memzero clears it below.
+        // A follow-up should refactor performKeyDerivation to accept
+        // (const char*, size_t) so we can pass password_buf.data() directly
+        // without any copy.
+        QByteArray passwordCopy = password_buf.as_byte_array_copy();
+        QByteArray derivedKey = performKeyDerivation(passwordCopy, salt, kdf, iterations, EVP_MAX_KEY_LENGTH);
 
-        // Clear password data securely and release mlock
-        sodium_memzero(passwordData.data(), passwordData.size());
-        sodium_munlock(passwordData.data(), static_cast<size_t>(passwordData.size()));
-
-        // Best-effort wipe of the source QString
+        // Zero the temporary copy; password_buf is wiped by its destructor.
+        sodium_memzero(passwordCopy.data(), static_cast<size_t>(passwordCopy.size()));
 
         return derivedKey;
     }

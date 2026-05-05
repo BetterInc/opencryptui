@@ -178,6 +178,14 @@ set(LIBRARY_SOURCES
     include/logging/secure_logger.h
     src/secure_string.cpp
     include/secure_string.h
+    src/hwkey_stub.cpp
+    src/hwkey_linux.cpp
+    src/hwkey_macos.cpp
+    src/hwkey_windows.cpp
+    include/hwkey.h
+    src/pq_hybrid.cpp
+    src/pq_hybrid_stub.cpp
+    include/pq_hybrid.h
     include/cryptoprovider.h
     src/opensslprovider.cpp
     src/opensslprovider_standard.cpp
@@ -415,6 +423,8 @@ add_engine_test(TestEngineKdf           tests/test_engine_kdf.cpp)
 add_engine_test(TestBenchmark           tests/test_benchmark.cpp)
 add_engine_test(TestEnginePerChunk      tests/test_engine_per_chunk.cpp)
 add_engine_test(TestSecureString        tests/test_secure_string.cpp)
+add_engine_test(TestSecureLoggerRedact  tests/test_secure_logger_redaction.cpp)
+add_engine_test(TestPqHybrid            tests/test_pq_hybrid.cpp)
 
 # End-to-end black-box test: exercises the shipped OpenCryptUI binary via
 # QProcess (startup smoke) plus engine round-trip and tamper-rejection cases
@@ -443,6 +453,8 @@ add_test(NAME EngineKdf             COMMAND TestEngineKdf)
 add_test(NAME TestBenchmark         COMMAND TestBenchmark)
 add_test(NAME EnginePerChunk        COMMAND TestEnginePerChunk)
 add_test(NAME SecureString          COMMAND TestSecureString)
+add_test(NAME SecureLoggerRedact    COMMAND TestSecureLoggerRedact)
+add_test(NAME PqHybrid              COMMAND TestPqHybrid)
 add_test(NAME EndToEndBlackbox      COMMAND TestEndToEndBlackbox)
 set_tests_properties(EndToEndBlackbox PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"

@@ -29,6 +29,10 @@ public:
     SecureLogger(SecureLogger const&) = delete;
     void operator=(SecureLogger const&) = delete;
 
+    // Sanitize log message (remove sensitive information).
+    // Public so tests can exercise it directly without going through log().
+    QString sanitizeMessage(const QString& message);
+
 private:
     SecureLogger(); // Private constructor
     ~SecureLogger();
@@ -42,9 +46,6 @@ private:
 
     // Convert log level to string
     QString logLevelToString(LogLevel level);
-
-    // Sanitize log message (remove sensitive information)
-    QString sanitizeMessage(const QString& message);
 };
 
 // Check for CI/CD environment

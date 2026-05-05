@@ -123,10 +123,23 @@ static int tc0_binaryStartupSmoke()
     std::fflush(stderr);
     return 0;
 #else
-    const QString binaryPath = QString::fromLatin1(OPENCRYPTUI_BINARY_PATH);
+    QString binaryPath = QString::fromLatin1(OPENCRYPTUI_BINARY_PATH);
+
+    // CMake injects the bare target name; on Windows the binary has a
+    // `.exe` suffix and on macOS it's `OpenCryptUI.app/Contents/MacOS/OpenCryptUI`.
+    // Linux has the bare name. Probe the common variants.
+    if (!QFile::exists(binaryPath)) {
+        const QStringList candidates = {
+            binaryPath + ".exe",                                  // Windows MSYS2
+            binaryPath + ".app/Contents/MacOS/OpenCryptUI",       // macOS bundle
+        };
+        for (const QString& c : candidates) {
+            if (QFile::exists(c)) { binaryPath = c; break; }
+        }
+    }
 
     if (!QFile::exists(binaryPath)) {
-        std::fprintf(stderr, "FAIL: TC0: binary not found at %s\n",
+        std::fprintf(stderr, "FAIL: TC0: binary not found at %s (also tried .exe / .app/Contents/MacOS variants)\n",
                      binaryPath.toLocal8Bit().constData());
         std::fflush(stderr);
         return 1;
