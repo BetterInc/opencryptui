@@ -50,7 +50,20 @@ set(ENGINE_HARDENING_SUMMARY "")
 
 function(_try_add_cflag flag var_name)
     string(MAKE_C_IDENTIFIER "has${flag}" _sym)
+    # Apple Clang silently accepts many GCC-only flags (e.g.
+    # -fstack-clash-protection) and emits "argument unused during
+    # compilation" once per translation unit. Forcing
+    # -Werror=unused-command-line-argument during the probe makes those
+    # cases fail the check so we don't add a no-op-with-warning flag.
+    #
+    # Only do this on Clang — gcc doesn't recognise that diagnostic
+    # name, so passing -Werror=unused-command-line-argument to gcc
+    # causes every probe to fail.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        set(CMAKE_REQUIRED_FLAGS "-Werror=unused-command-line-argument")
+    endif()
     check_cxx_compiler_flag("${flag}" ${_sym})
+    unset(CMAKE_REQUIRED_FLAGS)
     if(${_sym})
         list(APPEND ENGINE_HARDENING_CFLAGS "${flag}")
         list(APPEND ENGINE_HARDENING_SUMMARY "${flag}")
@@ -131,8 +144,12 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(OPENSSL_LIBRARIES $ENV{OPENSSL_LIBRARIES})
     link_directories(${ARGON2_LIB_DIR} ${SODIUM_LIB_DIR})
     
-    # Find macOS Security framework
+    # macOS frameworks. Security for keychain/SE/CryptoKit hooks (used by
+    # hwkey_macos.cpp); CoreFoundation for the CF* types Security drags in
+    # (CFDictionary, CFRelease, kCFAllocatorDefault — these are NOT in
+    # Security itself, contrary to many docs).
     find_library(SECURITY_FRAMEWORK Security REQUIRED)
+    find_library(COREFOUNDATION_FRAMEWORK CoreFoundation REQUIRED)
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     set(ARGON2_LIB_DIR $ENV{ARGON2_LIB_DIR})
     set(ARGON2_INCLUDE_DIR $ENV{ARGON2_INCLUDE_DIR})
@@ -236,7 +253,7 @@ target_link_libraries(EncryptionLib PRIVATE
 
 # Add Security framework on macOS
 if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    target_link_libraries(EncryptionLib PRIVATE ${SECURITY_FRAMEWORK})
+    target_link_libraries(EncryptionLib PRIVATE ${SECURITY_FRAMEWORK} ${COREFOUNDATION_FRAMEWORK})
 endif()
 
 # Create the main executable and link against the library.
