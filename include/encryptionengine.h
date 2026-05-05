@@ -108,19 +108,29 @@ private:
     // Removed lastIv storage for security reasons
 
     // -------------------------------------------------------------------------
-    // OCUI file-format v2 header (Fix #2)
-    // On-disk layout:
-    //   [magic "OCUI" 4][format_version 1][algorithm_id 1][kdf_id 1][reserved 1]
+    // OCUI file-format constants
+    //
+    // v2 on-disk layout:
+    //   [magic "OCUI" 4][format_version=2 1][algorithm_id 1][kdf_id 1][reserved 1]
     //   [iterations uint32 BE 4]   -- total header = 12 bytes
     //   [salt 32][iv N][ciphertext][sig trailer]
     //
-    // The entire prefix (including algorithm_id / kdf_id / iterations) is covered
-    // by the Ed25519 signature because generateDigitalSignature seeks to 0 and
-    // reads the whole file before the trailer is appended.
+    // v3 on-disk layout (AEAD only):
+    //   [magic "OCUI" 4][format_version=3 1][algorithm_id 1][kdf_id 1][reserved 1]
+    //   [iterations uint32 BE 4]   -- total header = 12 bytes
+    //   [salt 32][base_iv 12|16]
+    //   [chunk_size uint32 BE 4][chunk_count uint32 BE 4]
+    //   for each chunk i: [ciphertext chunk_size bytes (or less for last)][tag 16 bytes]
+    //   [sig trailer]
+    //
+    // The entire prefix including all chunks is covered by the Ed25519 signature.
     // -------------------------------------------------------------------------
-    static constexpr quint32 OCUI_MAGIC       = 0x4F435549u; // "OCUI"
-    static constexpr quint8  OCUI_FORMAT_VER  = 2;
-    static constexpr int     OCUI_HEADER_SIZE = 12; // magic(4)+ver(1)+alg(1)+kdf(1)+rsv(1)+iters(4)
+    static constexpr quint32 OCUI_MAGIC          = 0x4F435549u; // "OCUI"
+    static constexpr quint8  OCUI_FORMAT_VER     = 2;
+    static constexpr quint8  OCUI_FORMAT_VER_V3  = 3;
+    static constexpr int     OCUI_HEADER_SIZE    = 12; // magic(4)+ver(1)+alg(1)+kdf(1)+rsv(1)+iters(4)
+    static constexpr int     OCUI_CHUNK_SIZE     = 1 << 20; // 1 MiB per chunk
+    static constexpr int     OCUI_GCM_TAG_SIZE   = 16;      // GCM/Poly1305 tag bytes
 
     // Algorithm IDs
     static constexpr quint8 ALG_ID_AES256_GCM        = 0x01;
@@ -149,6 +159,28 @@ private:
     static quint8 kdfId(const QString& kdf);
     static QString kdfFromId(quint8 id);
     static int ivSizeForAlgorithm(const QString& algorithm); // Fix #7
+    static bool isAeadAlgorithm(const QString& algorithm);
+
+    // v3 per-chunk AEAD helpers (encryptionengine_chunks.cpp)
+    // buildNonce: XOR the 12-byte base_iv with uint32_be(chunkIndex) in the low 4 bytes.
+    static QByteArray buildChunkNonce(const QByteArray& baseIv, quint32 chunkIndex);
+    // encryptChunk: encrypt plainChunk with key+nonce, append 16-byte GCM tag, return ciphertext+tag.
+    static QByteArray encryptChunk(const QByteArray& key, const QByteArray& nonce,
+                                   const QByteArray& plainChunk, const QString& algorithm);
+    // decryptChunk: split last 16 bytes as tag, verify+decrypt, return plaintext (empty on auth failure).
+    static QByteArray decryptChunk(const QByteArray& key, const QByteArray& nonce,
+                                   const QByteArray& cipherChunkWithTag, const QString& algorithm);
+
+    // v3 encrypt/decrypt implementations (called from cryptOperation).
+    bool cryptOperationV3Encrypt(QFile& inputFile, QFile& outputFile,
+                                 const QByteArray& encKey, const QByteArray& sigKey,
+                                 const QByteArray& salt, const QByteArray& baseIv,
+                                 quint8 algId, quint8 kId, int iterations,
+                                 const QString& algorithm, const QString& outputPath);
+    bool cryptOperationV3Decrypt(QFile& inputFile, QFile& outputFile,
+                                 const QByteArray& encKey, const QByteArray& sigKey,
+                                 const QByteArray& salt, const QByteArray& baseIv,
+                                 const QString& algorithm, const QString& inputPath);
 
     // Vector to hold unique pointers to providers
     std::vector<std::unique_ptr<CryptoProvider>> m_providers;
