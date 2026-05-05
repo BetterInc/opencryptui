@@ -251,9 +251,16 @@ target_link_libraries(EncryptionLib PRIVATE
     sodium
 )
 
-# Add Security framework on macOS
+# Add Security + CoreFoundation frameworks on macOS (used by hwkey_macos.cpp).
 if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     target_link_libraries(EncryptionLib PRIVATE ${SECURITY_FRAMEWORK} ${COREFOUNDATION_FRAMEWORK})
+endif()
+
+# Add Windows CNG (ncrypt.dll) on Windows. hwkey_windows.cpp calls
+# NCryptOpenStorageProvider / NCryptFreeObject for TPM probing — those
+# live in ncrypt.lib (MSVC) / -lncrypt (MinGW).
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    target_link_libraries(EncryptionLib PRIVATE ncrypt)
 endif()
 
 # Create the main executable and link against the library.
