@@ -396,14 +396,36 @@ void MainWindow::updateBenchmarkTable(int iterations, double mbps, double ms, co
 {
     SECURE_LOG(DEBUG, "MainWindow", QString("Update Benchmark Table: iterations=%1, mbps=%2, ms=%3, cipher=%4, kdf=%5")
              .arg(iterations).arg(mbps).arg(ms).arg(cipher).arg(kdf));
+
+    // Disable sorting while inserting: with sorting live, each setItem can
+    // re-sort and move the partially-filled row out from under us, leaving
+    // empty cells in the originally-targeted row.
+    const bool wasSorting = ui->benchmarkTable->isSortingEnabled();
+    ui->benchmarkTable->setSortingEnabled(false);
+
     int row = ui->benchmarkTable->rowCount();
     ui->benchmarkTable->insertRow(row);
 
-    ui->benchmarkTable->setItem(row, 0, new QTableWidgetItem(QString::number(iterations)));
-    ui->benchmarkTable->setItem(row, 1, new QTableWidgetItem(QString::number(mbps, 'f', 2)));
-    ui->benchmarkTable->setItem(row, 2, new QTableWidgetItem(QString::number(ms, 'f', 2)));
+    auto numericItem = [](double v, char fmt = 'f', int prec = 2) {
+        auto* it = new QTableWidgetItem();
+        it->setData(Qt::DisplayRole, QString::number(v, fmt, prec));
+        it->setData(Qt::EditRole, v); // sort numerically, not lexicographically
+        return it;
+    };
+    auto intItem = [](int v) {
+        auto* it = new QTableWidgetItem();
+        it->setData(Qt::DisplayRole, QString::number(v));
+        it->setData(Qt::EditRole, v);
+        return it;
+    };
+
+    ui->benchmarkTable->setItem(row, 0, intItem(iterations));
+    ui->benchmarkTable->setItem(row, 1, numericItem(mbps));
+    ui->benchmarkTable->setItem(row, 2, numericItem(ms));
     ui->benchmarkTable->setItem(row, 3, new QTableWidgetItem(cipher));
     ui->benchmarkTable->setItem(row, 4, new QTableWidgetItem(kdf));
+
+    ui->benchmarkTable->setSortingEnabled(wasSorting);
 }
 
 void MainWindow::safeConnect(const QObject *sender, const char *signal, const QObject *receiver, const char *method)

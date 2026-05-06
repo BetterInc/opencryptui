@@ -144,8 +144,12 @@ static void aeadDeniabilityCheck(const QString& ct, const char* label)
     std::snprintf(buf, sizeof(buf), "%s: whole-file scan finds NO 'SIG_' marker", label);
     check(findSeq(whole, "SIG_", 4) == -1, buf);
 
-    std::snprintf(buf, sizeof(buf), "%s: whole-file scan finds NO 'AES' string", label);
-    check(findSeq(whole, "AES", 3) == -1, buf);
+    // 3-byte strings appear by chance in ~6% of 1 MB random buffers, so
+    // scan only the header/preamble region where a real algorithm-name
+    // leak would actually live. Anything past offset 256 is uniform
+    // ciphertext where a coincidence is meaningless.
+    std::snprintf(buf, sizeof(buf), "%s: header region (first 256 B) contains NO 'AES' string", label);
+    check(findSeq(whole.left(256), "AES", 3) == -1, buf);
 
     std::snprintf(buf, sizeof(buf), "%s: first 256 bytes look uniformly random", label);
     QByteArray head = whole.left(256);

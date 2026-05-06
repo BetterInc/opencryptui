@@ -123,7 +123,18 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         // non-AEAD ciphers (CBC/CTR) use v2 (bulk encrypt, no outer wrapper).
         const bool isAEADCipher = isAeadAlgorithm(algorithm);
 
-        if (isAEADCipher) {
+        // TEST-ONLY hook: setting OCUI_TEST_FORCE_V3=1 in the environment
+        // makes the encrypt path emit v3 files instead of v4 for AEAD
+        // ciphers, so the cross-version fallback path on decrypt can be
+        // exercised by automated tests. NEVER set this in production —
+        // v3 files are NOT deniable (they have plaintext OCUI magic at
+        // offset 0). Tests that use this hook should unset the variable
+        // immediately after the encrypt call.
+        const bool forceV3 = isAEADCipher &&
+                             qEnvironmentVariableIsSet("OCUI_TEST_FORCE_V3") &&
+                             qEnvironmentVariable("OCUI_TEST_FORCE_V3") == QStringLiteral("1");
+
+        if (isAEADCipher && !forceV3) {
             // v4 path: deniable outer AEAD.
             // No plaintext magic at offset 0 — file is: salt(32)||outer_iv(12)||ciphertext.
             // cryptOperationV4Encrypt receives the raw master key (pre-split) and
@@ -138,6 +149,33 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
                                               algId, kId, iterations,
                                               algorithm, outputPath);
             // masterKey will be zeroed by the cleanup guard.
+        } else if (isAEADCipher && forceV3) {
+            // TEST-ONLY: emit v3 (chunked AEAD with plaintext OCUI header).
+            masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
+            if (masterKey.isEmpty()) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "V3 (forced): key derivation failed");
+                return false;
+            }
+            if (!deriveSubkeys(masterKey, encKey, sigKey)) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "V3 (forced): sub-key derivation failed");
+                return false;
+            }
+            // cryptOperationV3Encrypt expects the caller to have written the 12-byte
+            // OCUI header (magic + version + alg + kdf + reserved + iterations).
+            {
+                QDataStream hdrOut(&outputFile);
+                hdrOut.setByteOrder(QDataStream::BigEndian);
+                hdrOut << quint32(OCUI_MAGIC);
+                hdrOut << quint8(OCUI_FORMAT_VER_V3);
+                hdrOut << quint8(algId);
+                hdrOut << quint8(kId);
+                hdrOut << quint8(0); // reserved
+                hdrOut << quint32(static_cast<quint32>(iterations));
+            }
+            success = cryptOperationV3Encrypt(inputFile, outputFile,
+                                              encKey, sigKey, salt, iv,
+                                              algId, kId, iterations,
+                                              algorithm, outputPath);
         } else {
             // v2 path: bulk encrypt (no per-chunk auth).
             // Derive master key, then split into enc + sig sub-keys (Fix #3).
