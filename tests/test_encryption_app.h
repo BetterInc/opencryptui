@@ -50,6 +50,7 @@ private slots:
     
     // Main test slots
     void testEncryptDecrypt();
+    void testEncryptDecryptArgon2();
     void testAllCiphersAndKDFs();
     void testEncryptDecryptWithKeyfile();
     void testVirtualDiskEncryption();

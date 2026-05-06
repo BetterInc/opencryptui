@@ -253,9 +253,9 @@
                                                                         <enum>QLineEdit::Password</enum>
                                                                     </property>
                                                                     <property name="placeholderText">
-                                                                        <string>Password</string>
+                                                                        <string>Password (16+ characters recommended)</string>
                                                                     </property>
-                                                                    <property name="maximumHeight">
+                                                                    <property name="minimumHeight">
                                                                         <number>25</number>
                                                                     </property>
                                                                 </widget>
@@ -268,7 +268,7 @@
                                                                     <property name="placeholderText">
                                                                         <string>Confirm Password</string>
                                                                     </property>
-                                                                    <property name="maximumHeight">
+                                                                    <property name="minimumHeight">
                                                                         <number>25</number>
                                                                     </property>
                                                                 </widget>
@@ -298,7 +298,7 @@
                                                                     <property name="placeholderText">
                                                                         <string>Outer Volume Password</string>
                                                                     </property>
-                                                                    <property name="maximumHeight">
+                                                                    <property name="minimumHeight">
                                                                         <number>25</number>
                                                                     </property>
                                                                 </widget>
@@ -311,7 +311,7 @@
                                                                     <property name="placeholderText">
                                                                         <string>Hidden Volume Password (different from outer)</string>
                                                                     </property>
-                                                                    <property name="maximumHeight">
+                                                                    <property name="minimumHeight">
                                                                         <number>25</number>
                                                                     </property>
                                                                 </widget>
@@ -438,6 +438,9 @@
                                                                 <property name="value">
                                                                     <number>10</number>
                                                                 </property>
+                                                                <property name="toolTip">
+                                                                    <string>Maps to the KDF time-cost parameter. For PBKDF2 use 600,000+ (no memory-hardness). Argon2/Scrypt also use a memory cost; 10+ is reasonable.</string>
+                                                                </property>
                                                             </widget>
                                                         </item>
                                                         <item row="3" column="0" colspan="2">
@@ -447,6 +450,9 @@
                                                                 </property>
                                                                 <property name="checked">
                                                                     <bool>true</bool>
+                                                                </property>
+                                                                <property name="toolTip">
+                                                                    <string>Adds an HMAC over the ciphertext to detect tampering. Recommended for non-AEAD ciphers (CBC/CTR). Redundant but harmless with GCM/ChaCha20-Poly1305.</string>
                                                                 </property>
                                                             </widget>
                                                         </item>
@@ -763,9 +769,9 @@
                                                                         <enum>QLineEdit::Password</enum>
                                                                     </property>
                                                                     <property name="placeholderText">
-                                                                        <string>Password</string>
+                                                                        <string>Password (16+ characters recommended)</string>
                                                                     </property>
-                                                                    <property name="maximumHeight">
+                                                                    <property name="minimumHeight">
                                                                         <number>25</number>
                                                                     </property>
                                                                 </widget>
@@ -778,7 +784,7 @@
                                                                     <property name="placeholderText">
                                                                         <string>Confirm Password</string>
                                                                     </property>
-                                                                    <property name="maximumHeight">
+                                                                    <property name="minimumHeight">
                                                                         <number>25</number>
                                                                     </property>
                                                                 </widget>
@@ -827,6 +833,9 @@
                                                                         <property name="value">
                                                                             <number>10</number>
                                                                         </property>
+                                                                        <property name="toolTip">
+                                                                            <string>Maps to the KDF time-cost parameter. For PBKDF2 use 600,000+ (no memory-hardness). Argon2/Scrypt also use a memory cost; 10+ is reasonable.</string>
+                                                                        </property>
                                                                     </widget>
                                                                 </item>
                                                             </layout>
@@ -838,6 +847,9 @@
                                                                 </property>
                                                                 <property name="checked">
                                                                     <bool>true</bool>
+                                                                </property>
+                                                                <property name="toolTip">
+                                                                    <string>Adds an HMAC over the ciphertext to detect tampering. Recommended for non-AEAD ciphers (CBC/CTR). Redundant but harmless with GCM/ChaCha20-Poly1305.</string>
                                                                 </property>
                                                             </widget>
                                                         </item>
@@ -1030,9 +1042,9 @@
                                                                         <enum>QLineEdit::Password</enum>
                                                                     </property>
                                                                     <property name="placeholderText">
-                                                                        <string>Password</string>
+                                                                        <string>Password (16+ characters recommended)</string>
                                                                     </property>
-                                                                    <property name="maximumHeight">
+                                                                    <property name="minimumHeight">
                                                                         <number>25</number>
                                                                     </property>
                                                                 </widget>
@@ -1045,7 +1057,7 @@
                                                                     <property name="placeholderText">
                                                                         <string>Confirm Password</string>
                                                                     </property>
-                                                                    <property name="maximumHeight">
+                                                                    <property name="minimumHeight">
                                                                         <number>25</number>
                                                                     </property>
                                                                 </widget>
@@ -1094,6 +1106,9 @@
                                                                         <property name="value">
                                                                             <number>10</number>
                                                                         </property>
+                                                                        <property name="toolTip">
+                                                                            <string>Maps to the KDF time-cost parameter. For PBKDF2 use 600,000+ (no memory-hardness). Argon2/Scrypt also use a memory cost; 10+ is reasonable.</string>
+                                                                        </property>
                                                                     </widget>
                                                                 </item>
                                                             </layout>
@@ -1105,6 +1120,9 @@
                                                                 </property>
                                                                 <property name="checked">
                                                                     <bool>true</bool>
+                                                                </property>
+                                                                <property name="toolTip">
+                                                                    <string>Adds an HMAC over the ciphertext to detect tampering. Recommended for non-AEAD ciphers (CBC/CTR). Redundant but harmless with GCM/ChaCha20-Poly1305.</string>
                                                                 </property>
                                                             </widget>
                                                         </item>

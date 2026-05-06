@@ -28,13 +28,14 @@ void MainWindow::on_actionPreferences_triggered()
 
 void MainWindow::on_actionAbout_triggered()
 {
+    QString commitHash = QString(GIT_COMMIT_HASH).left(10);
     QString aboutText = QString(
                             "Open Encryption UI\n"
                             "Version: %1\n"
-                            "Latest Commit: %2\n"
+                            "Build: %2\n"
                             "Hardware Acceleration: %3")
                             .arg(GIT_TAG)
-                            .arg(GIT_COMMIT_HASH)
+                            .arg(commitHash)
                             .arg(encryptionEngine.isHardwareAccelerationSupported() ? "Supported" : "Not supported");
 
     QMessageBox::about(this, "About", aboutText);
@@ -83,9 +84,10 @@ void MainWindow::on_actionAboutIterations_triggered()
         "of the encryption process. Iterations increase the computational effort required to derive the encryption "
         "key, making brute-force attacks more difficult.\n\n"
         "Recommended Iteration Counts:\n"
-        "- Argon2: 10 or more iterations. Argon2 is memory-hard, and higher iterations further increase security.\n"
-        "- Scrypt: N = 2^20 (1,048,576) or higher. Scrypt is also memory-hard, and high iteration counts make it more resistant to attacks.\n"
-        "- PBKDF2: 10,000,000 or more iterations. PBKDF2 relies on high iteration counts to increase security.\n\n"
+        "- Argon2: time-cost (t) of 3 or more, with high memory-cost. Argon2 is memory-hard; the iteration count interacts with memory and parallelism settings.\n"
+        "- Scrypt: N = 2^20 (1,048,576) or higher. Scrypt is also memory-hard; high N makes it more resistant to GPU/ASIC attacks.\n"
+        "- PBKDF2: 600,000 or more iterations (OWASP 2023). PBKDF2 has no memory-hardness, so it relies entirely on high iteration counts.\n\n"
+        "Note: the Iterations field in this UI maps to the KDF's time-cost parameter. The minimum allowed (10) is suitable only for Argon2 with sufficient memory; PBKDF2 in particular requires far higher counts to be secure.\n\n"
         "For maximum security, consider using higher iteration counts, especially if performance is not a critical concern.");
 
     QMessageBox::information(this, "About Iterations", aboutIterationsText);

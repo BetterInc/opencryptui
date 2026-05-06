@@ -43,10 +43,13 @@ void TestOpenCryptUI::testEncryptDecrypt()
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Setting algorithm to AES-256-CBC");
     QTest::qWait(WAIT_TIME_SHORT);
 
-    // Use Argon2 (PBKDF2 now enforces a 600k-iteration floor per
-    // SECURITY.md / Fix #1 — would make this test slow).
-    setComboBoxValueAndClose(kdfComboBox, "Argon2");
-    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Setting KDF to Argon2");
+    // Use Scrypt: it's natively in OpenSSLProvider::supportedKDFs() (so it
+    // survives the provider-switch combobox repopulation above), and its
+    // iteration floor (16384) keeps the test fast. PBKDF2's 600k floor would
+    // make the round-trip too slow for WAIT_TIME_LONG; Argon2 is not in the
+    // OpenSSL provider's KDF list so setting it would silently no-op.
+    setComboBoxValueAndClose(kdfComboBox, "Scrypt");
+    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Setting KDF to Scrypt");
     QTest::qWait(WAIT_TIME_SHORT);
 
     iterationsSpinBox->setValue(1);
@@ -148,6 +151,109 @@ void TestOpenCryptUI::testEncryptDecrypt()
 
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Basic encrypt/decrypt test completed successfully");
 }
+
+// UI-driven Argon2 round-trip. Mirrors testEncryptDecrypt but selects the
+// libsodium provider — its supportedKDFs() advertises Argon2, so the
+// dropdown actually contains it (OpenSSLProvider::supportedKDFs() does not).
+// This is the only place Argon2 gets exercised through the real UI button-
+// click flow; engine-level Argon2 is covered separately by EngineKdf.
+void TestOpenCryptUI::testEncryptDecryptArgon2()
+{
+    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Starting Argon2 UI round-trip test");
+
+    QLineEdit *filePathInput = mainWindow->findChild<QLineEdit *>("filePathLineEdit");
+    QLineEdit *passwordInput = mainWindow->findChild<QLineEdit *>("filePasswordLineEdit");
+    QPushButton *encryptButton = mainWindow->findChild<QPushButton *>("fileEncryptButton");
+    QPushButton *decryptButton = mainWindow->findChild<QPushButton *>("fileDecryptButton");
+    QComboBox *algorithmComboBox = mainWindow->findChild<QComboBox *>("fileAlgorithmComboBox");
+    QComboBox *kdfComboBox = mainWindow->findChild<QComboBox *>("kdfComboBox");
+    QSpinBox *iterationsSpinBox = mainWindow->findChild<QSpinBox *>("iterationsSpinBox");
+    QCheckBox *hmacCheckBox = mainWindow->findChild<QCheckBox *>("hmacCheckBox");
+    QComboBox *providerComboBox = mainWindow->findChild<QComboBox *>("m_cryptoProviderComboBox");
+
+    QVERIFY(filePathInput);
+    QVERIFY(passwordInput);
+    QVERIFY(encryptButton);
+    QVERIFY(decryptButton);
+    QVERIFY(algorithmComboBox);
+    QVERIFY(kdfComboBox);
+    QVERIFY(iterationsSpinBox);
+    QVERIFY(hmacCheckBox);
+    QVERIFY(providerComboBox);
+
+    waitForAndCloseMessageBoxes(WAIT_TIME_MEDIUM);
+
+    // libsodium is the only built-in provider whose supportedKDFs() includes Argon2.
+    // If it isn't compiled in, skip rather than fail.
+    if (providerComboBox->findText("libsodium") < 0) {
+        QSKIP("libsodium provider not available — Argon2 UI test cannot run");
+    }
+    setComboBoxValueAndClose(providerComboBox, "libsodium");
+    QTest::qWait(WAIT_TIME_MEDIUM);
+
+    // After provider switch the kdf combo is repopulated. Argon2 must be present.
+    QVERIFY2(kdfComboBox->findText("Argon2") >= 0,
+             "libsodium provider should advertise Argon2 in its KDF list");
+
+    // ChaCha20-Poly1305 is the AEAD libsodium handles best.
+    setComboBoxValueAndClose(algorithmComboBox, "ChaCha20-Poly1305");
+    QTest::qWait(WAIT_TIME_SHORT);
+
+    setComboBoxValueAndClose(kdfComboBox, "Argon2");
+    QTest::qWait(WAIT_TIME_SHORT);
+
+    // Argon2 with t-cost=1 (clamped to ARGON2_MIN_ITERATIONS=3 by
+    // calculateSecureIterations) keeps the round-trip well under the
+    // WAIT_TIME_LONG window.
+    iterationsSpinBox->setValue(1);
+    hmacCheckBox->setChecked(true);
+    QTest::qWait(WAIT_TIME_SHORT);
+
+    QString testFilePath = QDir::currentPath() + "/argon2_ui.txt";
+    QString encryptedFilePath = testFilePath + ".enc";
+    QFile::remove(testFilePath);
+    QFile::remove(encryptedFilePath);
+
+    QFile testFile(testFilePath);
+    QVERIFY(testFile.open(QIODevice::WriteOnly));
+    testFile.write("argon2-ui");
+    testFile.close();
+
+    QApplication::processEvents();
+
+    filePathInput->setText(testFilePath);
+    passwordInput->setText("testpassword");
+    QApplication::processEvents();
+    QTest::qWait(WAIT_TIME_SHORT);
+
+    QTest::mouseClick(encryptButton, Qt::LeftButton);
+    waitForAndCloseMessageBoxes(WAIT_TIME_LONG, "Success");
+    QVERIFY2(waitForFileToExist(encryptedFilePath),
+             "Argon2 encrypt did not produce ciphertext within timeout");
+
+    QFile::remove(testFilePath);
+    filePathInput->setText(encryptedFilePath);
+    passwordInput->setText("testpassword");
+    QApplication::processEvents();
+    QTest::qWait(WAIT_TIME_SHORT);
+
+    QTest::mouseClick(decryptButton, Qt::LeftButton);
+    waitForAndCloseMessageBoxes(WAIT_TIME_LONG, "Success");
+    QVERIFY2(waitForFileToExist(testFilePath),
+             "Argon2 decrypt did not produce plaintext within timeout");
+
+    QFile out(testFilePath);
+    QVERIFY(out.open(QIODevice::ReadOnly));
+    QByteArray got = out.readAll();
+    out.close();
+    QCOMPARE(QString::fromUtf8(got.left(9)), QString("argon2-ui"));
+
+    QFile::remove(testFilePath);
+    QFile::remove(encryptedFilePath);
+
+    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Argon2 UI round-trip test completed successfully");
+}
+
 bool TestOpenCryptUI::encryptAndDecrypt(const QString &cipher, const QString &kdf, bool useKeyfile)
 {
     SECURE_LOG(DEBUG, "TestOpenCryptUI", QString("Testing %1 with %2 %3").arg(cipher, kdf, useKeyfile ? "and keyfile" : ""));

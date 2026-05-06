@@ -159,11 +159,16 @@ void MainWindow::setupComboBoxes()
     ui->folderAlgorithmComboBox->addItems(algorithms);
     ui->diskAlgorithmComboBox->addItems(algorithms);
 
-    QStringList kdfs = {"Scrypt", "PBKDF2"};
+    QStringList kdfs = {"Argon2", "Scrypt", "PBKDF2"};
 
     ui->kdfComboBox->addItems(kdfs);
     ui->folderKdfComboBox->addItems(kdfs);
     ui->diskKdfComboBox->addItems(kdfs);
+
+    // Default to Argon2 (memory-hard, recommended)
+    ui->kdfComboBox->setCurrentText("Argon2");
+    ui->folderKdfComboBox->setCurrentText("Argon2");
+    ui->diskKdfComboBox->setCurrentText("Argon2");
 
     ui->iterationsSpinBox->setValue(10);
     ui->folderIterationsSpinBox->setValue(10);
