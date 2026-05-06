@@ -9,9 +9,20 @@
 //   (pre-2018) and on iOS Simulator this will fail gracefully.
 //
 // CURRENT STATUS — SCAFFOLDING:
-//   detect() returns MacSecureEnclave when available, None otherwise.
-//   wrapKey/unwrapKey delegate to the stub until the real SE API is in place.
-//   See the TODO block below for concrete next steps.
+//   detect() returns MacSecureEnclave in the backend field when the SE is
+//   available, None otherwise. HOWEVER, supportsKeyWrap is ALWAYS false and
+//   effectiveBackend is ALWAYS Backend::Stub, because wrapKey/unwrapKey still
+//   delegate to the software stub. See the API HONESTY CONTRACT in hwkey.h.
+//
+//   Until real SE ECIES calls replace the stub routing:
+//     detect().backend          == MacSecureEnclave  (hardware IS present)
+//     detect().supportsKeyWrap  == false             (HW wrap NOT implemented)
+//     detect().effectiveBackend == Stub              (software actually runs)
+//     wrappingBackend()         == Stub              (confirmed by public API)
+//
+//   DO NOT display "Secure Enclave protected" to the user based solely on
+//   detect().backend. Gate on supportsKeyWrap == true or
+//   wrappingBackend() == Backend::MacSecureEnclave.
 //
 // TODO(hwkey-real-impl): macOS Secure Enclave real implementation steps:
 //   1. Key creation: SecKeyCreateRandomKey() with:
@@ -29,7 +40,8 @@
 //        - The DEK bytes as the plaintext CFData.
 //        - Returns a CFData blob (encrypted to the SE public key); only the
 //          SE private key can decrypt it.
-//        - Persist the resulting blob alongside the encrypted file.
+//        - Pass the resulting blob to outerWrap() as backendBlob so the
+//          on-disk format conceals the ECIES structure.
 //
 //   3. Unwrap: SecKeyCreateDecryptedData() with the same algorithm.
 //        - The OS will surface a LAContext biometric/passcode challenge
@@ -44,12 +56,14 @@
 //
 //   5. Biometric UX: call LAContext evaluatePolicy:localizedReason:reply:
 //      before SecKeyCreateDecryptedData() if you want a custom prompt.
-//      Alternatively rely on the automatic prompt triggered by the access
-//      control on the SE key.
 //
 //   6. macOS 12+ / CryptoKit alternative: use CryptoKit.SecureEnclave.P256
 //      from a Swift bridging module, which is higher-level and avoids some
 //      CF memory management pitfalls in C++ code.
+//
+//   7. When real wrapping is implemented, set supportsKeyWrap = true in the
+//      MacSecureEnclave branch of detect(), set effectiveBackend =
+//      Backend::MacSecureEnclave, and update wrappingBackend() accordingly.
 //
 //   Header to include: <Security/Security.h> (already linked via
 //   SECURITY_FRAMEWORK in CMakeLists.txt for Darwin targets).
@@ -127,33 +141,44 @@ static bool probeSecureEnclave()
 
 // ---------------------------------------------------------------------------
 // detect() — macOS implementation.
+//
+//   Returns backend = MacSecureEnclave when the SE is accessible, reporting
+//   that hardware IS present. However, supportsKeyWrap is always false and
+//   effectiveBackend is always Backend::Stub because the real SE ECIES
+//   implementation is not yet wired in. wrapKey() routes to the stub.
 // ---------------------------------------------------------------------------
 Capabilities detect()
 {
     if (probeSecureEnclave()) {
         return Capabilities{
-            Backend::MacSecureEnclave,
-            /*supportsKeyWrap=*/true,
-            /*supportsSign=*/true, // SE supports ECDSA P-256
-            /*device_name=*/QLatin1String("Apple Secure Enclave")
+            /*backend=*/        Backend::MacSecureEnclave,
+            /*effectiveBackend=*/Backend::Stub,  // real HW wrap not yet implemented
+            /*supportsKeyWrap=*/false,  // stub routes here; NOT hardware-bound
+            /*supportsSign=*/   false,  // SE ECDSA not yet scaffolded
+            /*device_name=*/    QLatin1String("Apple Secure Enclave")
         };
     }
     return Capabilities{
-        Backend::None,
+        /*backend=*/        Backend::None,
+        /*effectiveBackend=*/Backend::Stub,
         /*supportsKeyWrap=*/false,
-        /*supportsSign=*/false,
-        /*device_name=*/QLatin1String("None (Secure Enclave unavailable)")
+        /*supportsSign=*/   false,
+        /*device_name=*/    QLatin1String("None (Secure Enclave unavailable)")
     };
 }
 
 // ---------------------------------------------------------------------------
 // wrapKey() — macOS implementation.
-//   Scaffolding: delegates to stub until real SE ECIES calls are in place.
+//
+//   API CONTRACT: delegates to the software stub. wrappingBackend() == Stub.
+//   Even when the Secure Enclave is present, this function uses the software
+//   fallback until TODO(hwkey-real-impl) is completed.
 // ---------------------------------------------------------------------------
 QByteArray wrapKey(const QByteArray& dek, QString* errorOut)
 {
     // TODO(hwkey-real-impl): replace with SecKeyCreateEncryptedData() using
-    //   kSecKeyAlgorithmECIESEncryptionCofactorX963SHA256AESGCM.
+    // kSecKeyAlgorithmECIESEncryptionCofactorX963SHA256AESGCM, then pass the
+    // resulting CFData blob to outerWrap() to conceal the ECIES structure.
     return Stub::wrapKey(dek, errorOut);
 }
 

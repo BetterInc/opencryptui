@@ -9,9 +9,20 @@
 //   provider handle as a probe.
 //
 // CURRENT STATUS — SCAFFOLDING:
-//   detect() probes for the TPM provider and returns WindowsTPM if found,
-//   None otherwise. wrapKey/unwrapKey delegate to the stub.
-//   See the TODO block below for concrete next steps.
+//   detect() probes for the TPM provider and returns WindowsTPM in the backend
+//   field if found, None otherwise. HOWEVER, supportsKeyWrap is ALWAYS false
+//   and effectiveBackend is ALWAYS Backend::Stub, because wrapKey/unwrapKey
+//   still delegate to the software stub. See the API HONESTY CONTRACT in hwkey.h.
+//
+//   Until real NCryptEncrypt/NCryptDecrypt calls replace the stub routing:
+//     detect().backend          == WindowsTPM  (hardware IS present)
+//     detect().supportsKeyWrap  == false       (HW wrap NOT implemented)
+//     detect().effectiveBackend == Stub        (software actually runs)
+//     wrappingBackend()         == Stub        (confirmed by public API)
+//
+//   DO NOT display "TPM-protected" to the user based solely on
+//   detect().backend. Gate on supportsKeyWrap == true or
+//   wrappingBackend() == Backend::WindowsTPM.
 //
 // TODO(hwkey-real-impl): Windows CNG / TPM real implementation steps:
 //   1. Open TPM provider:
@@ -34,7 +45,8 @@
 //        - dwFlags = NCRYPT_PAD_OAEP_FLAG + BCRYPT_OAEP_PADDING_INFO
 //          specifying BCRYPT_SHA256_ALGORITHM as the hash.
 //        - First call with pbOutput=NULL to get required output size.
-//        - Serialize: write cbResult (4 bytes LE) + pbResult into blob.
+//        - Pass the resulting buffer to outerWrap() as backendBlob so the
+//          on-disk format conceals the OAEP-wrapped structure.
 //
 //   4. Unwrap: NCryptDecrypt() with hKey (private, TPM-resident) and the
 //      blob. Windows will surface a CNG UI prompt (consent dialog or PIN
@@ -43,13 +55,11 @@
 //   5. PIN / consent UX: set NCRYPT_UI_PROTECT_KEY_FLAG in NCryptFinalizeKey()
 //      to require user presence. For stronger protection set
 //      NCRYPT_UI_APPCONTAINER_ACCESS_MEDIUM_FLAG.
-//      Alternatively use CryptUIWizImport for a richer dialog.
 //
-//   6. Platform Crypto Provider (TBS):
-//      For lower-level TPM2 access without NCrypt, use Tbsi_Context_Create()
-//      (TBS API) and Tbsip_Submit_Command() to send TPM2_CC_Seal / Unseal
-//      commands directly. This requires parsing TPM2B structures manually;
-//      prefer the NCrypt path for maintainability.
+//   6. When real wrapping is implemented, set supportsKeyWrap = true in the
+//      WindowsTPM branch of detect(), set effectiveBackend =
+//      Backend::WindowsTPM, and update wrappingBackend() in hwkey_stub.cpp
+//      accordingly.
 //
 //   Headers: <ncrypt.h>, <bcrypt.h>. Link: ncrypt.lib, bcrypt.lib.
 //   Add to CMakeLists.txt for WIN32 targets:
@@ -97,33 +107,45 @@ static bool probeWindowsTPM()
 
 // ---------------------------------------------------------------------------
 // detect() — Windows implementation.
+//
+//   Returns backend = WindowsTPM when the CNG TPM provider is accessible,
+//   reporting that hardware IS present. However, supportsKeyWrap is always
+//   false and effectiveBackend is always Backend::Stub because the real
+//   NCryptEncrypt implementation is not yet wired in. wrapKey() routes to
+//   the stub.
 // ---------------------------------------------------------------------------
 Capabilities detect()
 {
     if (probeWindowsTPM()) {
         return Capabilities{
-            Backend::WindowsTPM,
-            /*supportsKeyWrap=*/true,
-            /*supportsSign=*/false, // signing not scaffolded yet
-            /*device_name=*/QLatin1String("Windows Platform TPM (CNG)")
+            /*backend=*/        Backend::WindowsTPM,
+            /*effectiveBackend=*/Backend::Stub,  // real HW wrap not yet implemented
+            /*supportsKeyWrap=*/false,  // stub routes here; NOT hardware-bound
+            /*supportsSign=*/   false,
+            /*device_name=*/    QLatin1String("Windows Platform TPM (CNG)")
         };
     }
     return Capabilities{
-        Backend::None,
+        /*backend=*/        Backend::None,
+        /*effectiveBackend=*/Backend::Stub,
         /*supportsKeyWrap=*/false,
-        /*supportsSign=*/false,
-        /*device_name=*/QLatin1String("None (no CNG TPM provider)")
+        /*supportsSign=*/   false,
+        /*device_name=*/    QLatin1String("None (no CNG TPM provider)")
     };
 }
 
 // ---------------------------------------------------------------------------
 // wrapKey() — Windows implementation.
-//   Scaffolding: delegates to stub until real NCryptEncrypt calls are in place.
+//
+//   API CONTRACT: delegates to the software stub. wrappingBackend() == Stub.
+//   Even when a CNG TPM provider is present, this function uses the software
+//   fallback until TODO(hwkey-real-impl) is completed.
 // ---------------------------------------------------------------------------
 QByteArray wrapKey(const QByteArray& dek, QString* errorOut)
 {
     // TODO(hwkey-real-impl): replace with NCryptEncrypt() using
-    //   MS_PLATFORM_KEY_STORAGE_PROVIDER and NCRYPT_PAD_OAEP_FLAG.
+    // MS_PLATFORM_KEY_STORAGE_PROVIDER and NCRYPT_PAD_OAEP_FLAG, then pass
+    // the result to outerWrap() to conceal the OAEP structure on disk.
     return Stub::wrapKey(dek, errorOut);
 }
 

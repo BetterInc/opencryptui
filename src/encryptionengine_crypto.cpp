@@ -119,44 +119,51 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         // and the SecureLogger redactor only catches keywords, not values.
         SECURE_LOG(DEBUG, "EncryptionEngine", QString("Generated salt (%1 bytes) and IV (%2 bytes)").arg(salt.size()).arg(iv.size()));
 
-        // Derive master key, then split into enc + sig sub-keys (Fix #3).
-        masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
-        if (masterKey.isEmpty()) {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Key derivation failed");
-            return false;
-        }
-        if (!deriveSubkeys(masterKey, encKey, sigKey)) {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Sub-key derivation failed");
-            return false;
-        }
-        // masterKey is zeroed inside deriveSubkeys.
-
-        // Determine format version: AEAD ciphers use v3 (per-chunk), others use v2.
+        // Determine format version: AEAD ciphers use v4 (deniable outer AEAD),
+        // non-AEAD ciphers (CBC/CTR) use v2 (bulk encrypt, no outer wrapper).
         const bool isAEADCipher = isAeadAlgorithm(algorithm);
-        const quint8 fmtVer = isAEADCipher ? OCUI_FORMAT_VER_V3 : OCUI_FORMAT_VER;
-
-        // Write OCUI header BEFORE salt/IV so it is authenticated by the signature.
-        {
-            QDataStream hdrOut(&outputFile);
-            hdrOut.setByteOrder(QDataStream::BigEndian);
-            hdrOut << quint32(OCUI_MAGIC);
-            hdrOut << quint8(fmtVer);
-            hdrOut << quint8(algId);
-            hdrOut << quint8(kId);
-            hdrOut << quint8(0); // reserved
-            hdrOut << quint32(static_cast<quint32>(iterations));
-        }
 
         if (isAEADCipher) {
-            // v3 path: per-chunk AEAD framing.
-            // cryptOperationV3Encrypt writes salt, base_iv, chunk framing, all chunks,
-            // and the signature trailer.
-            success = cryptOperationV3Encrypt(inputFile, outputFile,
-                                              encKey, sigKey, salt, iv,
+            // v4 path: deniable outer AEAD.
+            // No plaintext magic at offset 0 — file is: salt(32)||outer_iv(12)||ciphertext.
+            // cryptOperationV4Encrypt receives the raw master key (pre-split) and
+            // internally derives all three subkeys (outer, enc, sig) from it.
+            masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
+            if (masterKey.isEmpty()) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "V4: key derivation failed");
+                return false;
+            }
+            success = cryptOperationV4Encrypt(inputFile, outputFile,
+                                              masterKey, salt, iv,
                                               algId, kId, iterations,
                                               algorithm, outputPath);
+            // masterKey will be zeroed by the cleanup guard.
         } else {
             // v2 path: bulk encrypt (no per-chunk auth).
+            // Derive master key, then split into enc + sig sub-keys (Fix #3).
+            masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
+            if (masterKey.isEmpty()) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Key derivation failed");
+                return false;
+            }
+            if (!deriveSubkeys(masterKey, encKey, sigKey)) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Sub-key derivation failed");
+                return false;
+            }
+            // masterKey is zeroed inside deriveSubkeys.
+
+            // Write OCUI header BEFORE salt/IV so it is authenticated by the signature.
+            {
+                QDataStream hdrOut(&outputFile);
+                hdrOut.setByteOrder(QDataStream::BigEndian);
+                hdrOut << quint32(OCUI_MAGIC);
+                hdrOut << quint8(OCUI_FORMAT_VER);
+                hdrOut << quint8(algId);
+                hdrOut << quint8(kId);
+                hdrOut << quint8(0); // reserved
+                hdrOut << quint32(static_cast<quint32>(iterations));
+            }
+
             outputFile.write(salt);
             outputFile.write(iv);
 
@@ -185,107 +192,160 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
     {
         // -----------------------------------------------------------------
         // DECRYPT PATH
+        //
+        // Detection strategy:
+        //   1. If the algorithm is an AEAD cipher, try v4 first (deniable).
+        //      v4 files have NO magic bytes at offset 0 — we distinguish by
+        //      attempting outer AEAD decryption; if it fails we fall through
+        //      to v3/v2.
+        //   2. Otherwise read the OCUI magic and route to v3 or v2.
         // -----------------------------------------------------------------
 
-        // Read and validate the OCUI header (supports v2 and v3).
-        quint8 fileFmtVer = 0;
-        {
-            quint32 magic = 0;
-            quint8  fileAlgId = 0, fileKdfId = 0, reserved = 0;
-            quint32 fileIterations = 0;
+        const bool isAEADCipherForDecrypt = isAeadAlgorithm(algorithm);
 
-            QDataStream hdrIn(&inputFile);
-            hdrIn.setByteOrder(QDataStream::BigEndian);
-            hdrIn >> magic;
-            if (magic != OCUI_MAGIC) {
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                    "File does not have OCUI header. Old-format files must be "
-                    "re-encrypted — rejecting for security.");
-                return false;
+        if (isAEADCipherForDecrypt) {
+            // Try v4 path first.  cryptOperationV4Decrypt reads offset 0 itself.
+            success = cryptOperationV4Decrypt(inputFile, outputFile,
+                                              password, keyfilePaths,
+                                              algorithm, kdf, iterations,
+                                              inputPath);
+            if (success) {
+                SECURE_LOG(DEBUG, "EncryptionEngine", "V4 decrypt succeeded");
+            } else {
+                // v4 failed — could be wrong password, or it could be a v3 file.
+                // Try v3 path: reset and check for OCUI magic.
+                SECURE_LOG(DEBUG, "EncryptionEngine",
+                    "V4 decrypt failed; retrying as v3");
+                if (!outputFile.seek(0)) return false;
+                outputFile.resize(0);
+                if (!inputFile.seek(0)) return false;
+
+                // Re-read header for v3 detection.
+                quint8 fileFmtVer = 0;
+                {
+                    quint32 magic = 0;
+                    quint8  fileAlgId = 0, fileKdfId = 0, reserved = 0;
+                    quint32 fileIterations = 0;
+
+                    QDataStream hdrIn(&inputFile);
+                    hdrIn.setByteOrder(QDataStream::BigEndian);
+                    hdrIn >> magic;
+                    if (magic != OCUI_MAGIC) {
+                        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                            "Not a v4 file and no OCUI header — unrecognised format");
+                        return false;
+                    }
+                    hdrIn >> fileFmtVer >> fileAlgId >> fileKdfId >> reserved >> fileIterations;
+
+                    if (fileFmtVer != OCUI_FORMAT_VER_V3) {
+                        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                            QString("Expected v3 in AEAD fallback, got version %1").arg(fileFmtVer));
+                        return false;
+                    }
+                    if (fileAlgId != algId || fileKdfId != kId) {
+                        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Algorithm/KDF mismatch in v3 fallback");
+                        return false;
+                    }
+                    iterations = static_cast<int>(fileIterations);
+                    if (kId == KDF_ID_PBKDF2 && iterations < 600000) {
+                        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "PBKDF2 iterations below floor in v3 file");
+                        return false;
+                    }
+                }
+
+                // Read salt and base_iv from the v3 file.
+                if (inputFile.read(salt.data(), salt.size()) != salt.size()) {
+                    SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "V3 fallback: failed to read salt");
+                    return false;
+                }
+                if (inputFile.read(iv.data(), iv.size()) != iv.size()) {
+                    SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "V3 fallback: failed to read IV");
+                    return false;
+                }
+
+                masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
+                if (masterKey.isEmpty()) {
+                    SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "V3 fallback: key derivation failed");
+                    return false;
+                }
+                if (!deriveSubkeys(masterKey, encKey, sigKey)) {
+                    SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "V3 fallback: sub-key derivation failed");
+                    return false;
+                }
+
+                success = cryptOperationV3Decrypt(inputFile, outputFile,
+                                                  encKey, sigKey, salt, iv,
+                                                  algorithm, inputPath);
             }
-            hdrIn >> fileFmtVer >> fileAlgId >> fileKdfId >> reserved >> fileIterations;
-
-            // Accept v2 and v3; reject everything else.
-            if (fileFmtVer != OCUI_FORMAT_VER && fileFmtVer != OCUI_FORMAT_VER_V3) {
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                    QString("Unsupported OCUI format version: %1").arg(fileFmtVer));
-                return false;
-            }
-
-            // v3 files must use an AEAD cipher; reject non-AEAD for v3.
-            if (fileFmtVer == OCUI_FORMAT_VER_V3 && !isAeadAlgorithm(algorithm)) {
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                    "OCUI v3 file requires an AEAD cipher (GCM or ChaCha20-Poly1305)");
-                return false;
-            }
-
-            // Reject if the stored algorithm doesn't match the caller's request.
-            if (fileAlgId != algId) {
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                    QString("Algorithm mismatch: file says %1 (%2), caller wants %3 (%4)")
-                    .arg(fileAlgId).arg(algorithmFromId(fileAlgId))
-                    .arg(algId).arg(algorithm));
-                return false;
-            }
-
-            // Reject if the stored KDF doesn't match the caller's request.
-            if (fileKdfId != kId) {
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                    QString("KDF mismatch: file says %1 (%2), caller wants %3 (%4)")
-                    .arg(fileKdfId).arg(kdfFromId(fileKdfId))
-                    .arg(kId).arg(kdf));
-                return false;
-            }
-
-            // Use the iteration count stored in the file, not the caller's value,
-            // so an attacker cannot request fewer iterations.
-            iterations = static_cast<int>(fileIterations);
-
-            // Enforce the floor independently of calculateSecureIterations so
-            // we never silently accept a file encrypted with a weak KDF.
-            if (kId == KDF_ID_PBKDF2 && iterations < 600000) {
-                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                    QString("PBKDF2 iteration count in file (%1) is below the 600 000 "
-                            "floor — rejecting.").arg(iterations));
-                return false;
-            }
-
-            SECURE_LOG(DEBUG, "EncryptionEngine",
-                QString("OCUI v%1 header OK: alg=%2 kdf=%3 iters=%4")
-                .arg(fileFmtVer).arg(algorithm).arg(kdf).arg(iterations));
-        }
-
-        // Read salt and IV from the file (after the OCUI header).
-        if (inputFile.read(salt.data(), salt.size()) != salt.size()) {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read salt");
-            return false;
-        }
-        if (inputFile.read(iv.data(), iv.size()) != iv.size()) {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read IV");
-            return false;
-        }
-
-        // SECURITY: redacted — see comment at the encrypt-side logging above.
-        SECURE_LOG(DEBUG, "EncryptionEngine", QString("Read salt (%1 bytes) and IV (%2 bytes)").arg(salt.size()).arg(iv.size()));
-
-        // Derive master key, then split into enc + sig sub-keys (Fix #3).
-        masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
-        if (masterKey.isEmpty()) {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Key derivation failed");
-            return false;
-        }
-        if (!deriveSubkeys(masterKey, encKey, sigKey)) {
-            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Sub-key derivation failed");
-            return false;
-        }
-
-        if (fileFmtVer == OCUI_FORMAT_VER_V3) {
-            // v3 path: signature-first, then per-chunk AEAD.
-            // inputFile is positioned just after base_iv (i.e. at chunk_size field).
-            success = cryptOperationV3Decrypt(inputFile, outputFile,
-                                              encKey, sigKey, salt, iv,
-                                              algorithm, inputPath);
         } else {
+            // Non-AEAD path: read OCUI header and route to v2.
+            quint8 fileFmtVer = 0;
+            {
+                quint32 magic = 0;
+                quint8  fileAlgId = 0, fileKdfId = 0, reserved = 0;
+                quint32 fileIterations = 0;
+
+                QDataStream hdrIn(&inputFile);
+                hdrIn.setByteOrder(QDataStream::BigEndian);
+                hdrIn >> magic;
+                if (magic != OCUI_MAGIC) {
+                    SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                        "File does not have OCUI header. Old-format files must be "
+                        "re-encrypted — rejecting for security.");
+                    return false;
+                }
+                hdrIn >> fileFmtVer >> fileAlgId >> fileKdfId >> reserved >> fileIterations;
+
+                if (fileFmtVer != OCUI_FORMAT_VER) {
+                    SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                        QString("Unsupported OCUI format version %1 for non-AEAD cipher").arg(fileFmtVer));
+                    return false;
+                }
+                if (fileAlgId != algId) {
+                    SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                        QString("Algorithm mismatch: file says %1 (%2), caller wants %3 (%4)")
+                        .arg(fileAlgId).arg(algorithmFromId(fileAlgId))
+                        .arg(algId).arg(algorithm));
+                    return false;
+                }
+                if (fileKdfId != kId) {
+                    SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                        QString("KDF mismatch: file says %1 (%2), caller wants %3 (%4)")
+                        .arg(fileKdfId).arg(kdfFromId(fileKdfId))
+                        .arg(kId).arg(kdf));
+                    return false;
+                }
+                iterations = static_cast<int>(fileIterations);
+                if (kId == KDF_ID_PBKDF2 && iterations < 600000) {
+                    SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                        QString("PBKDF2 iteration count in file (%1) is below the 600 000 "
+                                "floor — rejecting.").arg(iterations));
+                    return false;
+                }
+                SECURE_LOG(DEBUG, "EncryptionEngine",
+                    QString("OCUI v%1 header OK: alg=%2 kdf=%3 iters=%4")
+                    .arg(fileFmtVer).arg(algorithm).arg(kdf).arg(iterations));
+            }
+
+            if (inputFile.read(salt.data(), salt.size()) != salt.size()) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read salt");
+                return false;
+            }
+            if (inputFile.read(iv.data(), iv.size()) != iv.size()) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to read IV");
+                return false;
+            }
+
+            masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
+            if (masterKey.isEmpty()) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Key derivation failed");
+                return false;
+            }
+            if (!deriveSubkeys(masterKey, encKey, sigKey)) {
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Sub-key derivation failed");
+                return false;
+            }
+
             // v2 path: bulk decrypt (original logic).
             qint64 decryptionStartPos = static_cast<qint64>(OCUI_HEADER_SIZE) + salt.size() + iv.size();
             qint64 signatureSize = 0;
@@ -333,14 +393,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
                 return false;
             }
 
-            // Seek to the start of ciphertext.
             inputFile.seek(decryptionStartPos);
-
-            // v2 AEAD ciphers have no HMAC (built-in auth).
-            bool isAEADCipher = isAeadAlgorithm(algorithm);
-            if (isAEADCipher) {
-                useHMAC = false;
-            }
 
             if (hasSignature && signatureSize > 0) {
                 qint64 encryptedSize = inputFile.size() - decryptionStartPos - signatureSize;

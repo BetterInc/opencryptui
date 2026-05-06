@@ -123,11 +123,26 @@ private:
     //   for each chunk i: [ciphertext chunk_size bytes (or less for last)][tag 16 bytes]
     //   [sig trailer]
     //
+    // v4 on-disk layout (AEAD only, deniable — no plaintext magic):
+    //   [salt 32][outer_iv 12][outer_ciphertext + 16-byte outer GCM tag]
+    //
+    //   outer_ciphertext decrypts (AES-256-GCM, outer key) to an inner blob:
+    //     [magic "OCUI" 4][format_version=4 1][alg_id 1][kdf_id 1][rsv 1]
+    //     [iterations BE4][chunk_size BE4][chunk_count BE4]
+    //     for each chunk i: [ciphertext][tag 16]
+    //     [Ed25519 sig 64][pubkey 32]
+    //
+    //   Outer key = crypto_kdf_derive_from_key(master, subkey_id=3, ctx="OCUI-V4O")
+    //   Inner enc key = crypto_kdf_derive_from_key(master, subkey_id=1, ctx="OCUI-KEY")
+    //   Inner sig key = crypto_kdf_derive_from_key(master, subkey_id=2, ctx="OCUI-SIG")
+    //   master is the first 32 bytes of the KDF output.
+    //
     // The entire prefix including all chunks is covered by the Ed25519 signature.
     // -------------------------------------------------------------------------
     static constexpr quint32 OCUI_MAGIC          = 0x4F435549u; // "OCUI"
     static constexpr quint8  OCUI_FORMAT_VER     = 2;
     static constexpr quint8  OCUI_FORMAT_VER_V3  = 3;
+    static constexpr quint8  OCUI_FORMAT_VER_V4  = 4;
     static constexpr int     OCUI_HEADER_SIZE    = 12; // magic(4)+ver(1)+alg(1)+kdf(1)+rsv(1)+iters(4)
     static constexpr int     OCUI_CHUNK_SIZE     = 1 << 20; // 1 MiB per chunk
     static constexpr int     OCUI_GCM_TAG_SIZE   = 16;      // GCM/Poly1305 tag bytes
@@ -181,6 +196,33 @@ private:
                                  const QByteArray& encKey, const QByteArray& sigKey,
                                  const QByteArray& salt, const QByteArray& baseIv,
                                  const QString& algorithm, const QString& inputPath);
+
+    // v4 encrypt/decrypt implementations (deniable outer AEAD wrapper).
+    // cryptOperationV4Encrypt:
+    //   - Builds inner payload (v3-style chunks + sig) into a memory buffer.
+    //   - Wraps it with AES-256-GCM using the outer key.
+    //   - Writes: salt(32) || outer_iv(12) || outer_ciphertext+tag to outputFile.
+    // cryptOperationV4Decrypt:
+    //   - Reads salt(32) || outer_iv(12) from file offset 0.
+    //   - Derives master → outer key.
+    //   - Decrypts outer AEAD → inner payload buffer.
+    //   - Parses inner OCUI v4 header, verifies Ed25519, decrypts chunks.
+    //   Returns true on success; false means wrong password OR not v4 format.
+    bool cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFile,
+                                 const QByteArray& masterKeyBytes,
+                                 const QByteArray& salt, const QByteArray& outerIv,
+                                 quint8 algId, quint8 kId, int iterations,
+                                 const QString& algorithm, const QString& outputPath);
+    bool cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFile,
+                                 const QString& password,
+                                 const QStringList& keyfilePaths,
+                                 const QString& algorithm, const QString& kdf,
+                                 int iterations, const QString& inputPath);
+
+    // Derive the outer AEAD key for v4 from a 32-byte master.
+    // Uses crypto_kdf_derive_from_key with context "OCUI-V4O" (subkey id 3).
+    // master is NOT zeroed by this function (caller may still need enc/sig subkeys).
+    static bool deriveV4OuterKey(const unsigned char* master32, QByteArray& outerKey);
 
     // Vector to hold unique pointers to providers
     std::vector<std::unique_ptr<CryptoProvider>> m_providers;

@@ -9,10 +9,20 @@
 //   backend when the process lacks permission (common in containers/CI).
 //
 // CURRENT STATUS — SCAFFOLDING:
-//   detect() probes /dev/tpmrm0 and returns LinuxTPM2 if available,
-//   None otherwise. wrapKey/unwrapKey delegate to the stub implementation
-//   in hwkey_stub.cpp until the real tpm2-tss ESAPI calls are in place.
-//   See the TODO block below for the concrete next steps.
+//   detect() probes /dev/tpmrm0 and returns LinuxTPM2 in the backend field if
+//   available, None otherwise. HOWEVER, supportsKeyWrap is ALWAYS false and
+//   effectiveBackend is ALWAYS Backend::Stub, because wrapKey/unwrapKey still
+//   delegate to the software stub. See the API HONESTY CONTRACT in hwkey.h.
+//
+//   Until real tpm2-tss ESAPI calls replace the stub routing:
+//     detect().backend         == LinuxTPM2   (hardware IS present)
+//     detect().supportsKeyWrap == false       (hardware wrap NOT implemented)
+//     detect().effectiveBackend == Stub       (software is what actually runs)
+//     wrappingBackend()        == Stub        (confirmed by the public API)
+//
+//   DO NOT display "TPM-protected" to the user based solely on
+//   detect().backend. Gate on supportsKeyWrap == true or
+//   wrappingBackend() == Backend::LinuxTPM2.
 //
 // TODO(hwkey-real-impl): Linux TPM 2.0 real implementation steps:
 //   1. Link against tpm2-tss: libtss2-esys, libtss2-rc, libtss2-mu.
@@ -35,8 +45,9 @@
 //        - inPublic.type = TPM2_ALG_KEYEDHASH, scheme = TPM2_ALG_NULL
 //        - Optionally bind to PCR 0+7 (Secure Boot) via creationPCR to
 //          detect firmware tampering.
-//        - Serialize the TPM2B_PRIVATE + TPM2B_PUBLIC output blobs and
-//          prepend the HwKey blob header (magic 0x4C54 "LT", version 0x01).
+//        - Serialize the TPM2B_PRIVATE + TPM2B_PUBLIC output blobs.
+//        - Pass the serialized bytes to HwKey::Stub::outerWrapBlob() as the
+//          backendBlob so the outer AES-256-GCM layer conceals the TPM format.
 //
 //   5. Unwrap (unseal): Esys_Load() the persisted blobs back under the
 //      primary key, then Esys_Unseal() to recover the plaintext DEK.
@@ -44,13 +55,17 @@
 //
 //   6. PIN prompt UX: open a Qt modal QInputDialog (echo mode Password)
 //      before calling Esys_TR_SetAuth(). On failure the TPM increments its
-//      dictionary-attack counter; after DA lockout call Esys_DictionaryAttackLockReset()
-//      with the lockout authorization (or inform the user to wait for the
-//      auto-reset interval).
+//      dictionary-attack counter; after DA lockout call
+//      Esys_DictionaryAttackLockReset() with the lockout authorization (or
+//      inform the user to wait for the auto-reset interval).
 //
 //   7. Session HMAC: wrap the Esys_Unseal() call in an HMAC session
 //      (Esys_StartAuthSession with TPM2_SE_HMAC) for command integrity and
 //      to prevent interposer attacks on the LPC/SPI bus.
+//
+//   8. When real wrapping is implemented, set supportsKeyWrap = true in the
+//      LinuxTPM2 branch of detect(), set effectiveBackend = Backend::LinuxTPM2,
+//      and update wrappingBackend() in hwkey_stub.cpp accordingly.
 //
 //   Key algorithm recommendation: AES-256 CFB as the wrapped key type
 //   inside the TPM, or a keyedhash (sealed data) for carrying an external
@@ -93,36 +108,46 @@ static bool probeTPM()
 
 // ---------------------------------------------------------------------------
 // detect() — Linux implementation.
+//
+//   Returns backend = LinuxTPM2 when /dev/tpmrm0 is accessible, reporting
+//   that hardware IS present. However, supportsKeyWrap is always false and
+//   effectiveBackend is always Backend::Stub because the real tpm2-tss
+//   implementation is not yet wired in. wrapKey() routes to the stub.
 // ---------------------------------------------------------------------------
 Capabilities detect()
 {
     if (probeTPM()) {
         return Capabilities{
-            Backend::LinuxTPM2,
-            /*supportsKeyWrap=*/true,
-            /*supportsSign=*/false, // signing not scaffolded yet
-            /*device_name=*/QLatin1String("TPM 2.0 (/dev/tpmrm0)")
+            /*backend=*/        Backend::LinuxTPM2,
+            /*effectiveBackend=*/Backend::Stub,  // real HW wrap not yet implemented
+            /*supportsKeyWrap=*/false,  // stub routes here; NOT hardware-bound
+            /*supportsSign=*/   false,
+            /*device_name=*/    QLatin1String("TPM 2.0 (/dev/tpmrm0)")
         };
     }
     // No TPM accessible — report None and fall back to stub/password-only.
     return Capabilities{
-        Backend::None,
+        /*backend=*/        Backend::None,
+        /*effectiveBackend=*/Backend::Stub,
         /*supportsKeyWrap=*/false,
-        /*supportsSign=*/false,
-        /*device_name=*/QLatin1String("None (no TPM found)")
+        /*supportsSign=*/   false,
+        /*device_name=*/    QLatin1String("None (no TPM found)")
     };
 }
 
 // ---------------------------------------------------------------------------
 // wrapKey() — Linux implementation.
-//   Scaffolding: delegates to stub until real tpm2-tss calls are in place.
+//
+//   API CONTRACT: delegates to the software stub. wrappingBackend() == Stub.
+//   Even when /dev/tpmrm0 is present, this function uses the software fallback
+//   until TODO(hwkey-real-impl) is completed. See the honesty contract in
+//   hwkey.h: callers must not assume TPM protection from detect() alone.
 // ---------------------------------------------------------------------------
 QByteArray wrapKey(const QByteArray& dek, QString* errorOut)
 {
-    // TODO(hwkey-real-impl): replace with Esys_Create() seal operation.
-    // For now: if TPM is present we still use the stub to keep the engine
-    // functional. The backend field in detect() already tells callers that
-    // LinuxTPM2 was found, so they can display an appropriate UI message.
+    // TODO(hwkey-real-impl): replace with Esys_Create() seal operation, then
+    // pass the serialized TPM2B blobs to the outer AEAD wrapper so the
+    // on-disk format remains opaque regardless of backend.
     return Stub::wrapKey(dek, errorOut);
 }
 

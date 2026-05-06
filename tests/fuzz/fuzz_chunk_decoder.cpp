@@ -2,29 +2,20 @@
 //
 // libFuzzer harness for EncryptionEngine::decryptChunk (v3 per-chunk AEAD).
 //
-// decryptChunk is a static method that takes:
-//   key   — 32-byte AES-256 / ChaCha key (or 16 bytes for AES-128)
-//   nonce — 12-byte GCM/Poly1305 nonce
-//   cipherChunkWithTag — arbitrary bytes (last 16 == GCM tag)
-//   algorithm — cipher name string
+// decryptChunk is a private static method, so we cannot call it directly.
+// Instead we drive it through the public decryptFile → cryptOperationV3Decrypt
+// → decryptChunk stack with a carefully constructed v3-shaped file blob.
+// This exercises the full decode path including chunk-framing (chunk_size,
+// chunk_count), per-chunk GCM tag verification, and buildChunkNonce.
 //
-// Fuzzing strategy: split the fuzz input into three regions:
-//   [0..31]  → key (fixed 32 bytes; shorter inputs use zero-padding)
-//   [32..43] → nonce (12 bytes; zero-padded if input is short)
-//   [44..]   → cipherChunkWithTag (everything remaining)
-//
-// This directly stress-tests the EVP_Decrypt* path inside decryptChunk without
-// going through the file I/O layer, making it 10–100x faster per iteration.
-// It also exercises buildChunkNonce with arbitrary base_iv values, and
-// cryptOperationV3Decrypt is reachable by building a minimal in-memory v3 file
-// and calling decryptFile (done for the second variant below).
-//
-// The harness also drives cryptOperationV3Decrypt via the full file path using
-// a minimal v3 file layout so the chunk-count / framing parser is fuzzed.
+// Fuzzing strategy: the fuzz input is split as:
+//   byte[0]  — control byte (trailer mode + chunk count)
+//   byte[1..] — chunk payload bytes (fuzz-controlled ciphertext + tag)
 //
 // Invariant: never crash; always return empty QByteArray for bad tag/key.
 
 #include "encryptionengine.h"
+#include <QBuffer>
 #include <QCoreApplication>
 #include <QFile>
 #include <QDataStream>
@@ -34,18 +25,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-
-// Expose the private static decryptChunk via a thin wrapper defined here.
-// Because we cannot call a private method from outside the class, we use a
-// helper trick: instantiate the engine and call the public decryptFile which
-// internally calls decryptChunk.  For the raw decryptChunk path we access it
-// by building a helper subclass.
-//
-// Wait — decryptChunk IS declared `static` in the private section of
-// EncryptionEngine.  We cannot call it directly.  Instead we drive it through
-// the public decryptFile path with a carefully constructed v3 file.  This is
-// actually *better* for fuzzing because it exercises the full decode stack
-// including chunk_size/chunk_count framing.
 
 static int          g_argc    = 0;
 static char**       g_argv    = nullptr;
@@ -59,70 +38,63 @@ static constexpr quint8  OCUI_FMT_V3        = 3;
 static constexpr quint8  ALG_ID_AES256_GCM  = 0x01;
 static constexpr quint8  KDF_ID_PBKDF2      = 0x01;
 static constexpr quint32 MIN_PBKDF2_ITERS   = 600000u;
-static constexpr int     GCM_TAG_SIZE       = 16;
 
 // Construct a minimal v3-shaped byte blob that wraps the fuzz-supplied chunk
-// payload.  The signature trailer is intentionally absent or malformed so the
-// engine will reject at the signature check — but that means the signature
-// parser path is fuzzed, and the chunk framing code is reached for inputs that
-// accidentally pass the signature gate (if the last 12 bytes look like a valid
-// "SIG_" trailer with sigLen == 0).
+// payload.  Uses QBuffer for serialisation to avoid QDataStream/QByteArray
+// open-mode confusion (WriteOnly seeks to 0; Append seeks to end).
 //
-// Two modes:
-//   mode 0: no trailer — engine rejects at "no signature" check.
-//   mode 1: stub "SIG_" trailer with sigLen=0, CRC=CRC32(empty).
-//           Engine reads magic OK but CRC of zero bytes = specific value;
-//           if that doesn't match it rejects.  Exercises the trailer parse.
+// Layout:
+//   [magic(4)][ver(1)][algId(1)][kdfId(1)][rsv(1)][iters(4)]  = 12 bytes (header)
+//   [salt(32)][base_iv(12)]                                    = 44 bytes
+//   [chunk_size(4)][chunk_count(4)]                            = 8 bytes
+//   [chunk payload (fuzz-controlled)]
+//   [optional SIG_ stub trailer(12)]
+//
+// Two trailer modes:
+//   mode 0: no trailer — engine rejects at "no Ed25519 signature" check.
+//   mode 1: stub SIG_ trailer with sigLen=0, CRC32(empty)=0x00000000.
+//           Exercises the trailer magic/length/CRC parse path in
+//           verifySignature before the Ed25519 body check.
 static QByteArray buildV3File(const uint8_t* chunkData, size_t chunkSize,
                                quint32 chunkCount, int mode)
 {
-    // Header: OCUI_MAGIC(4) + ver(1) + algId(1) + kdfId(1) + reserved(1) + iters(4) = 12 bytes
-    // Then: salt(32) + base_iv(12)
-    // Then: chunk_size(4) + chunk_count(4)
-    // Then: <chunk bytes>
-    // Optionally: sig trailer
-
     QByteArray blob;
-    blob.reserve(12 + 32 + 12 + 8 + static_cast<int>(chunkSize) + 12);
+    blob.reserve(12 + 44 + 8 + static_cast<int>(chunkSize) + 12);
 
-    {
-        QDataStream ds(&blob, QIODevice::WriteOnly);
-        ds.setByteOrder(QDataStream::BigEndian);
-        ds << OCUI_MAGIC;
-        ds << OCUI_FMT_V3;
-        ds << ALG_ID_AES256_GCM;
-        ds << KDF_ID_PBKDF2;
-        ds << quint8(0); // reserved
-        ds << MIN_PBKDF2_ITERS;
-    }
+    QBuffer buf(&blob);
+    buf.open(QIODevice::WriteOnly);
+    QDataStream ds(&buf);
+    ds.setByteOrder(QDataStream::BigEndian);
 
-    // Salt: 32 zero bytes; base_iv: 12 zero bytes.
-    blob.append(QByteArray(32, '\x00')); // salt
-    blob.append(QByteArray(12, '\x00')); // base_iv
+    // 12-byte OCUI header
+    ds << OCUI_MAGIC;
+    ds << OCUI_FMT_V3;
+    ds << ALG_ID_AES256_GCM;
+    ds << KDF_ID_PBKDF2;
+    ds << quint8(0); // reserved
+    ds << MIN_PBKDF2_ITERS;
 
-    {
-        QDataStream ds(&blob, QIODevice::WriteOnly | QIODevice::Append);
-        ds.setByteOrder(QDataStream::BigEndian);
-        // Claim each chunk is 1 MiB; only the last chunk may be shorter.
-        ds << quint32(1u << 20); // chunk_size
-        ds << chunkCount;
-    }
+    // 32-byte salt + 12-byte base_iv (all zeros — key derivation will still
+    // run with a deterministic result, which is fine for fuzzing purposes)
+    for (int i = 0; i < 44; ++i) ds << quint8(0);
 
-    blob.append(reinterpret_cast<const char*>(chunkData), static_cast<int>(chunkSize));
+    // Chunk framing: chunk_size = 1 MiB, chunk_count = caller-supplied
+    ds << quint32(1u << 20); // chunk_size
+    ds << chunkCount;
+
+    // Chunk payload bytes (fuzz-controlled)
+    buf.write(reinterpret_cast<const char*>(chunkData), static_cast<qint64>(chunkSize));
 
     if (mode == 1) {
-        // Append a stub "SIG_" trailer:
-        // [sigLen=0 bytes of sig][magic "SIG_"][sigLen=0][CRC32(empty sig)]
-        // CRC32 of empty data == 0x00000000 (our impl returns ~0xFFFFFFFF == 0
-        // for empty? Let's check: initial crc=0xFFFFFFFF, loop body never
-        // executes, return ~0xFFFFFFFF = 0x00000000).
-        QDataStream ds(&blob, QIODevice::WriteOnly | QIODevice::Append);
-        ds.setByteOrder(QDataStream::BigEndian);
+        // Stub "SIG_" trailer: [magic=0x5349475F][sigLen=0][CRC32(empty)=0]
+        // CRC32 of an empty buffer: initial crc = 0xFFFFFFFF, no loop iterations,
+        // return ~0xFFFFFFFF = 0x00000000.
         ds << quint32(0x5349475Fu); // "SIG_"
         ds << quint32(0u);          // sigLen = 0
         ds << quint32(0x00000000u); // CRC32(empty) = 0
     }
 
+    buf.close();
     return blob;
 }
 

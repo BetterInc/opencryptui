@@ -22,6 +22,7 @@
 // Temp-file strategy: single reused path per process.
 
 #include "encryptionengine.h"
+#include <QBuffer>
 #include <QCoreApplication>
 #include <QFile>
 #include <QDataStream>
@@ -86,30 +87,38 @@ static void ensureInit()
 // Build a v2-shaped file: fixed header prefix + fuzz-controlled suffix.
 // The suffix is the region that contains the ciphertext and the trailer,
 // and is entirely controlled by the fuzzer.
+//
+// Uses QBuffer so all serialisation happens through one sequential write
+// cursor; avoids the WriteOnly/Append open-mode ambiguity that affects
+// QDataStream constructed directly on a QByteArray.
 static QByteArray buildV2File(const uint8_t* suffix, size_t suffixSize)
 {
     QByteArray blob;
     blob.reserve(PREFIX_SIZE + static_cast<int>(suffixSize));
 
-    {
-        QDataStream ds(&blob, QIODevice::WriteOnly);
-        ds.setByteOrder(QDataStream::BigEndian);
-        ds << OCUI_MAGIC;
-        ds << OCUI_FMT_V2;
-        ds << ALG_ID_AES256_CBC;
-        ds << KDF_ID_PBKDF2;
-        ds << quint8(0); // reserved
-        ds << MIN_PBKDF2_ITERS;
-    }
+    QBuffer buf(&blob);
+    buf.open(QIODevice::WriteOnly);
+    QDataStream ds(&buf);
+    ds.setByteOrder(QDataStream::BigEndian);
 
-    // Salt: 32 zero bytes; IV: 16 zero bytes.
-    // Using all-zero salt means the key derivation always produces the same
-    // key for a given password, which is fine here because we're stressing
-    // the signature verifier, not KDF correctness.
-    blob.append(QByteArray(SALT_SIZE, '\x00'));
-    blob.append(QByteArray(IV_SIZE,   '\x00'));
+    // 12-byte OCUI v2 header
+    ds << OCUI_MAGIC;
+    ds << OCUI_FMT_V2;
+    ds << ALG_ID_AES256_CBC;
+    ds << KDF_ID_PBKDF2;
+    ds << quint8(0); // reserved
+    ds << MIN_PBKDF2_ITERS;
 
-    blob.append(reinterpret_cast<const char*>(suffix), static_cast<int>(suffixSize));
+    // 32-byte salt + 16-byte IV (all zeros).
+    // All-zero salt means key derivation is deterministic across iterations,
+    // which is fine here — we're stressing the signature verifier path, not
+    // KDF correctness.
+    for (int i = 0; i < SALT_SIZE + IV_SIZE; ++i) ds << quint8(0);
+
+    // Fuzz-controlled suffix: ciphertext + trailer
+    buf.write(reinterpret_cast<const char*>(suffix), static_cast<qint64>(suffixSize));
+
+    buf.close();
     return blob;
 }
 

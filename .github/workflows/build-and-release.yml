@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: false
+      run_fuzz:
+        description: "Run libFuzzer smoke check (60 s per harness, Clang required)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -467,6 +472,111 @@ jobs:
         with:
           name: sanitize-test-log
           path: build/Testing/Temporary/LastTest.log
+
+  # ---------------------------------------------------------------------------
+  # fuzz-smoke — optional on-demand job.
+  #
+  # Triggered only when workflow_dispatch is used with run_fuzz=true.
+  # Builds the three libFuzzer harnesses with Clang + ASan/UBSan and runs
+  # each for 60 seconds.  The job fails if any fuzzer crashes (non-zero exit
+  # or a crash-* artifact in the build directory).
+  #
+  # NOT triggered on every push — fuzzing in regular CI is slow and noisy;
+  # use this as a periodic / pre-audit check instead.
+  # ---------------------------------------------------------------------------
+  fuzz-smoke:
+    needs: []      # independent of the build matrix
+    runs-on: ubuntu-latest
+    if: ${{ inputs.run_fuzz == true }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Clang + dependencies
+        run: |
+          set -o pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang llvm \
+            cmake ninja-build git \
+            qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools \
+            libssl-dev libsodium-dev libargon2-dev
+
+      - name: Configure CMake with libFuzzer
+        run: |
+          set -o pipefail
+          cmake -S . -B build-fuzz -G Ninja \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DOCUI_ENABLE_FUZZ=ON \
+            -DCMAKE_CXX_FLAGS="-DQT_NO_DEBUG_OUTPUT"
+
+      - name: Build fuzzer harnesses
+        run: |
+          set -o pipefail
+          cmake --build build-fuzz --target FuzzOCUIHeader FuzzChunkDecoder FuzzSignatureVerifier -j 2
+
+      - name: Generate seed corpora
+        run: |
+          set -o pipefail
+          chmod +x tests/fuzz/generate_corpus.sh
+          ./tests/fuzz/generate_corpus.sh build-fuzz
+
+      - name: Run FuzzOCUIHeader (60 s)
+        run: |
+          set -o pipefail
+          cd build-fuzz
+          ./FuzzOCUIHeader \
+            -max_total_time=60 \
+            -print_final_stats=1 \
+            -artifact_prefix=crash-header- \
+            ../tests/fuzz/corpus/ocui_header/
+          # Fail loudly if any crash artifact was produced.
+          if ls crash-header-* 2>/dev/null | grep -q .; then
+            echo "ERROR: FuzzOCUIHeader produced crash artifacts:"
+            ls -la crash-header-*
+            exit 1
+          fi
+
+      - name: Run FuzzChunkDecoder (60 s)
+        run: |
+          set -o pipefail
+          cd build-fuzz
+          ./FuzzChunkDecoder \
+            -max_total_time=60 \
+            -print_final_stats=1 \
+            -artifact_prefix=crash-chunk- \
+            ../tests/fuzz/corpus/chunk_decoder/
+          if ls crash-chunk-* 2>/dev/null | grep -q .; then
+            echo "ERROR: FuzzChunkDecoder produced crash artifacts:"
+            ls -la crash-chunk-*
+            exit 1
+          fi
+
+      - name: Run FuzzSignatureVerifier (60 s)
+        run: |
+          set -o pipefail
+          cd build-fuzz
+          ./FuzzSignatureVerifier \
+            -max_total_time=60 \
+            -print_final_stats=1 \
+            -artifact_prefix=crash-sigver- \
+            ../tests/fuzz/corpus/signature_verifier/
+          if ls crash-sigver-* 2>/dev/null | grep -q .; then
+            echo "ERROR: FuzzSignatureVerifier produced crash artifacts:"
+            ls -la crash-sigver-*
+            exit 1
+          fi
+
+      - name: Upload crash artifacts (if any)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: build-fuzz/crash-*
+          if-no-files-found: ignore
 
   release:
     needs: build
