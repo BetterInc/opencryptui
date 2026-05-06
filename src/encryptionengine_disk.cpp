@@ -2,8 +2,16 @@
 #include "encryptionengine_diskops.h"
 #include "logging/secure_logger.h"
 #include <QFile>
+#include <sodium.h>
 
 // Disk encryption implementation for EncryptionEngine class
+//
+// SECURITY NOTE: every site that derives a `key` here must zero it via
+// sodium_memzero (NOT memset). Plain memset can be elided by the compiler
+// with LTO + dead-store elimination, leaving raw key bytes in the heap
+// after the QByteArray is destroyed. sodium_memzero is documented as
+// non-elidable.  Additionally, several early-return paths previously
+// leaked the key — all such paths now wipe before returning.
 
 bool EncryptionEngine::encryptDisk(const QString& diskPath, const QString& password, const QString& algorithm, 
                                   const QString& kdf, int iterations, bool useHMAC, 
@@ -35,33 +43,37 @@ bool EncryptionEngine::encryptDisk(const QString& diskPath, const QString& passw
     bool headerCreated = DiskOperations::createEncryptionHeader(diskPath, algorithm, kdf, iterations, useHMAC, salt, iv);
     if (!headerCreated) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to create encryption header for disk");
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Open the disk for encryption
     QFile diskFile(diskPath);
     if (!diskFile.open(QIODevice::ReadWrite)) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Failed to open disk for encryption: %1").arg(diskPath));
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Skip the header (4KB)
     diskFile.seek(DISK_HEADER_SIZE);
-    
+
     // Create a temporary file for the encrypted data
     QTemporaryFile tempFile;
     if (!tempFile.open()) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to create temporary file for encryption");
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Encrypt the disk contents
     bool encryptionSuccess = m_currentProvider->encrypt(diskFile, tempFile, key, iv, algorithm, useHMAC);
-    
-    // Securely wipe the key from memory
-    memset(key.data(), 0, key.size());
-    
+
+    // Securely wipe the key from memory (sodium_memzero is non-elidable;
+    // plain memset can be removed by the optimiser).
+    if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
+
     if (!encryptionSuccess) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to encrypt disk contents");
         diskFile.close();
@@ -133,31 +145,33 @@ bool EncryptionEngine::decryptDisk(const QString& diskPath, const QString& passw
     
     // Derive the encryption key from the password and keyfiles
     QByteArray key = deriveKey(password, headerSalt, keyfilePaths, kdfOverride, iterOverride);
-    
+
     // Open the disk for decryption
     QFile diskFile(diskPath);
     if (!diskFile.open(QIODevice::ReadWrite)) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Failed to open disk for decryption: %1").arg(diskPath));
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Skip the header (4KB)
     diskFile.seek(DISK_HEADER_SIZE);
-    
+
     // Create a temporary file for the decrypted data
     QTemporaryFile tempFile;
     if (!tempFile.open()) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to create temporary file for decryption");
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Decrypt the disk contents
     bool decryptionSuccess = m_currentProvider->decrypt(diskFile, tempFile, key, headerIv, algOverride, hmacOverride);
-    
-    // Securely wipe the key from memory
-    memset(key.data(), 0, key.size());
-    
+
+    // Securely wipe the key from memory (sodium_memzero is non-elidable).
+    if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
+
     if (!decryptionSuccess) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to decrypt disk contents");
         diskFile.close();
@@ -218,39 +232,43 @@ bool EncryptionEngine::encryptDiskSection(const QString& diskPath, const QString
     
     // Derive the encryption key from the password and keyfiles
     QByteArray key = deriveKey(password, salt, keyfilePaths, kdf, iterations);
-    
+
     // Open the disk for encryption
     QFile diskFile(diskPath);
     if (!diskFile.open(QIODevice::ReadWrite)) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Failed to open disk for section encryption: %1").arg(diskPath));
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Seek to the section start offset
     if (!diskFile.seek(startOffset)) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Failed to seek to section offset: %1").arg(startOffset));
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Create a temporary file for the section data
     QTemporaryFile sectionFile;
     if (!sectionFile.open()) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to create temporary file for section data");
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Read the section data to the temporary file
     QByteArray buffer;
     buffer.resize(1024 * 1024); // 1MB buffer
     qint64 totalRead = 0;
     qint64 bytesRead;
-    
+
     while (totalRead < sectionSize && (bytesRead = diskFile.read(buffer.data(), qMin(qint64(buffer.size()), sectionSize - totalRead))) > 0) {
         if (sectionFile.write(buffer.data(), bytesRead) != bytesRead) {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to write section data to temporary file");
             diskFile.close();
+            if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
             return false;
         }
         totalRead += bytesRead;
@@ -270,39 +288,42 @@ bool EncryptionEngine::encryptDiskSection(const QString& diskPath, const QString
     // Update the main header to indicate that it has a hidden volume
     bool mainHeaderUpdated = DiskOperations::createEncryptionHeader(
         diskPath, algorithm, kdf, iterations, useHMAC, salt, iv, true);
-    
+
     if (!mainHeaderUpdated) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to update main disk header for hidden volume");
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Write the hidden volume information
     bool headerUpdated = DiskOperations::createHiddenVolume(
         diskPath, sectionSize, algorithm, kdf, iterations, useHMAC, salt, iv);
     if (!headerUpdated) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to update disk header with hidden volume information");
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Reset the section file and prepare for encryption
     sectionFile.reset();
-    
+
     // Create a temporary file for the encrypted data
     QTemporaryFile encryptedFile;
     if (!encryptedFile.open()) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to create temporary file for encrypted section");
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Encrypt the section data
     bool encryptionSuccess = m_currentProvider->encrypt(sectionFile, encryptedFile, key, iv, algorithm, useHMAC);
-    
-    // Securely wipe the key from memory
-    memset(key.data(), 0, key.size());
-    
+
+    // Securely wipe the key from memory (sodium_memzero is non-elidable).
+    if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
+
     if (!encryptionSuccess) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to encrypt section data");
         diskFile.close();
@@ -400,61 +421,66 @@ bool EncryptionEngine::decryptDiskSection(const QString& diskPath, const QString
     
     // Derive the encryption key from the password and keyfiles
     QByteArray key = deriveKey(password, salt, keyfilePaths, kdfOverride, iterOverride);
-    
+
     // Open the disk for decryption
     QFile diskFile(diskPath);
     if (!diskFile.open(QIODevice::ReadWrite)) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Failed to open disk for section decryption: %1").arg(diskPath));
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Seek to the section start offset
     if (!diskFile.seek(startOffset)) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Failed to seek to section offset: %1").arg(startOffset));
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Create a temporary file for the encrypted section data
     QTemporaryFile encryptedFile;
     if (!encryptedFile.open()) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to create temporary file for encrypted section");
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Read the encrypted section data to the temporary file
     QByteArray buffer;
     buffer.resize(1024 * 1024); // 1MB buffer
     qint64 totalRead = 0;
     qint64 bytesRead;
-    
+
     while (totalRead < sectionSize && (bytesRead = diskFile.read(buffer.data(), qMin(qint64(buffer.size()), sectionSize - totalRead))) > 0) {
         if (encryptedFile.write(buffer.data(), bytesRead) != bytesRead) {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to write encrypted section data to temporary file");
             diskFile.close();
+            if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
             return false;
         }
         totalRead += bytesRead;
     }
-    
+
     // Reset the encrypted file and prepare for decryption
     encryptedFile.reset();
-    
+
     // Create a temporary file for the decrypted data
     QTemporaryFile decryptedFile;
     if (!decryptedFile.open()) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to create temporary file for decrypted section");
         diskFile.close();
+        if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
         return false;
     }
-    
+
     // Decrypt the section data
     bool decryptionSuccess = m_currentProvider->decrypt(encryptedFile, decryptedFile, key, iv, algOverride, hmacOverride);
-    
-    // Securely wipe the key from memory
-    memset(key.data(), 0, key.size());
-    
+
+    // Securely wipe the key from memory (sodium_memzero is non-elidable).
+    if (!key.isEmpty()) sodium_memzero(key.data(), key.size());
+
     if (!decryptionSuccess) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to decrypt section data");
         diskFile.close();

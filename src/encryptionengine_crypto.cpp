@@ -59,6 +59,14 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         return false;
     }
 
+    // Restrict output to owner-only (0600). Applies to both encrypted (.enc)
+    // outputs AND decrypted plaintext outputs — the latter is by far the more
+    // sensitive case. Best-effort; on Windows this maps to ACL bits, on Linux
+    // this overrides the user's umask. Done before any write so that the
+    // visible-in-/proc-fd window between create() and setPermissions() is
+    // empty (file size = 0).
+    outputFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+
     // masterKey holds the raw KDF output (up to 64 bytes for Argon2/Scrypt with
     // EVP_MAX_KEY_LENGTH = 64).  We split it into encKey (32 B) + sigKey (32 B)
     // via HKDF-like key separation in deriveSubkeys (Fix #3).
@@ -442,9 +450,14 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
                     QString secureDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
                     QDir().mkpath(secureDir);
                     QTemporaryFile tempFile(secureDir + QDir::separator() + "opencryptui_XXXXXX");
-                    tempFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
 
                     if (tempFile.open()) {
+                        // setPermissions only works once the file actually exists on disk
+                        // — it's a no-op when called before open(). Move it here so that
+                        // the temp ciphertext copy is genuinely owner-only on Windows.
+                        // (On Linux, QTemporaryFile already uses mkstemp → 0600, so this
+                        // is belt-and-braces for cross-platform safety.)
+                        tempFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
                         inputFile.seek(decryptionStartPos);
                         QByteArray buffer(4096, 0);
                         qint64 totalBytesRead = 0;

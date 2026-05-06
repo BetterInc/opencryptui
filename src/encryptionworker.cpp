@@ -355,7 +355,21 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
 
 EncryptionWorker::~EncryptionWorker()
 {
-    // No heap allocations to clean up
+    // Best-effort scrub of the password QStrings we held. QString is
+    // implicitly shared / ref-counted, so this only zeroes the storage
+    // that *this* QString instance currently points to — any earlier
+    // copies (e.g. the QLineEdit that produced the value, or QString
+    // detaches that happened during process()) are unaffected. The
+    // residual leak is documented in SECURITY.md ("Memory Safety").
+    // We do this anyway because the worker tends to be the last
+    // long-lived QString holder before deletion, so it has the highest
+    // chance of being a hot copy.
+    if (!m_password.isEmpty()) {
+        m_password.fill(QChar('\0'));
+    }
+    if (!m_hiddenPassword.isEmpty()) {
+        m_hiddenPassword.fill(QChar('\0'));
+    }
 }
 
 void EncryptionWorker::processBenchmark()
