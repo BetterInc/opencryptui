@@ -2,25 +2,44 @@
 
 ## Threat Model
 
+OpenCryptUI is built for **security researchers** protecting their own work
+(0-day research, exploit development, sensitive client data). The design
+prioritises **plausible deniability and minimal forensic fingerprint** over
+features that would otherwise be conventional (TPM key sealing, in-binary
+branding, etc.).
+
 ### What OpenCryptUI protects against
 
-- Opportunistic attackers who obtain a copy of an encrypted file without the passphrase.
-- Casual forensic examination of storage media (e.g., lost laptop, discarded drive).
-- Accidental disclosure of file contents to unauthorized processes that do not have
-  access to the passphrase or keyfile.
+- Opportunistic attackers who obtain an encrypted file without the passphrase.
+- Casual forensic examination — `binwalk`, `strings`, `file` — of storage media.
+- A compromised endpoint reading stale memory (we mlock + zero secrets where possible).
+- Tampering with encrypted files (Ed25519 signature + per-chunk AEAD detect any byte flip).
+- A device thief who has the disk but not the passphrase (Argon2id ~1 GiB cost).
 
 ### What OpenCryptUI does NOT protect against
 
-- Nation-state adversaries with physical access to a running machine and the ability
-  to perform cold-boot, DMA, or hardware-implant attacks.
-- Quantum adversaries running Shor's algorithm on a cryptographically relevant
-  quantum computer (see Post-Quantum section below).
-- Kernel-level malware or rootkits that can read process memory or intercept
-  passphrase entry before encryption occurs.
-- Adversaries who obtain the passphrase or keyfile by other means (social engineering,
-  keyloggers, shoulder surfing).
-- Metadata: file names, sizes, access timestamps, and directory structure are NOT
-  encrypted.
+- Nation-state adversaries with physical access to a running machine: cold-boot,
+  DMA, or hardware-implant attacks.
+- Quantum adversaries running Shor's algorithm (PQ hybrid is scaffolded, not yet
+  wired into the production format — see Post-Quantum section).
+- Kernel-level malware / rootkits / firmware implants that read process memory or
+  intercept passphrase entry.
+- Passphrase-extraction attacks: keyloggers, shoulder surfing, social engineering,
+  rubber-hose cryptanalysis.
+- Metadata: filenames, sizes, mtime, and directory structure are NOT encrypted.
+
+### Discoverability — what an attacker CAN learn
+
+This matters for plausible deniability. Honest accounting of what's visible:
+
+| Surface | Currently visible? | Mitigation status |
+|---|---|---|
+| Plaintext "OCUI" magic at file offset 0 | **YES** | format v4 (planned) moves magic into the encrypted region |
+| File length pattern (chunked AEAD has predictable per-chunk overhead) | YES | inherent — accept it |
+| Existence of OpenCryptUI binary on disk reveals tool choice | YES | future `OCUI_STEALTH=ON` build option strips identifying strings |
+| TPM use (any Backend other than `None`) | leak via TPM2_BLOB structure | **see Hardware Backends below — TPM is NOT recommended for this threat model** |
+| YubiKey use | leak only via "user owns a YubiKey" — token is portable + destructible | recommended hardware path |
+| Software-only encryption | leaves no hardware fingerprint | **default and recommended** |
 
 ---
 
@@ -36,6 +55,60 @@
 
 **Cipher selection**: Camellia-256-CBC and Camellia-128-CBC have been removed.
 They are not on the CNSA 2.0 approved list and provide no authenticated encryption.
+
+---
+
+## Hardware Backends
+
+For a security researcher's threat model, the trade-off space is more nuanced
+than "hardware = better". Each backend leaves a different forensic fingerprint:
+
+| Backend | "Owns this hardware" signal | On-disk blob fingerprint | Device-seizure recovery | Status |
+|---|---|---|---|---|
+| **Software-only** | none | none — looks like random data | n/a — keys are passphrase-derived, you carry the passphrase | **default**, fully working |
+| **TPM 2.0** (Linux/Windows/Mac) | **none** — TPM is now in nearly every device made after 2018, mandated by Windows 11 | TPM2_PUBLIC structure recognisable on disk **unless we wrap it inside our own format** | bad — keys stay on the seized device | scaffolded, real wiring TBD |
+| **YubiKey / PKCS#11** | **strong** — only ~10–15M units globally; possession of a token is itself a signal | recognisable as PKCS#11 wrap unless wrapped-inside-our-format | good — token is portable, can be hidden / palmed / destroyed | scaffolded, real wiring TBD |
+
+### What each option is good for
+
+- **Software-only**: minimum footprint. No hardware artifact on or off the
+  device. The default. Recommended for users whose threat model includes
+  forensic examination of the device but not theft of the live machine.
+
+- **TPM**: protects against an attacker who has the disk but not the booted
+  laptop. The "user has a TPM" signal is essentially null because everyone
+  does — Windows 11 requires it, all Apple Silicon Macs have a Secure
+  Enclave, every recent Intel/AMD has fTPM. The risk is the on-disk wrapped
+  blob fingerprinting as TPM2_PUBLIC. We mitigate that by **wrapping the
+  TPM blob inside our own AEAD-encrypted format**, so a forensic scan sees
+  random ciphertext, not "this is a TPM-sealed key".
+
+- **YubiKey/PKCS#11**: best for users who travel with their keys and need to
+  separate the "decrypt-capable" hardware from the laptop. The trade-off
+  is that **token possession itself is a signal** — owning a YubiKey is
+  much rarer than owning a TPM-equipped laptop, and a forensic examiner
+  finding a YubiKey on you flags above-average opsec. Acceptable for
+  threat models where you control whether the token is found at all
+  (you can hide/destroy it before search); not acceptable if mere
+  possession is enough to invite scrutiny.
+
+### Mitigations that apply to BOTH hardware backends
+
+For either TPM or PKCS#11 to be deniability-acceptable, the wrapped key
+blob produced by the hardware MUST be encrypted inside our own file
+format — not stored as recognisable TPM2 / PKCS#11 ASN.1 on disk. Format
+v4 (planned) does this; until then, hardware backends should not be used
+in deniability-sensitive scenarios.
+
+### What's currently misleading
+
+`HwKey::detect()` may report `Backend::LinuxTPM2`, `MacSecureEnclave`,
+or `WindowsTPM` if the underlying hardware is present, but
+`HwKey::wrapKey()` currently routes to the software stub on every code
+path. The API surface lies. This is being corrected: either the platform
+backends get real implementations or the detection is suppressed until
+they do. Track the active state via the runtime `HwKey::Capabilities`
+struct's `supportsKeyWrap` field — that one is honest.
 
 ---
 
