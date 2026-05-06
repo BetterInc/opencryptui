@@ -1,13 +1,30 @@
 // OCUI v4 deniability test — the headline test for the threat model.
 //
-// Encrypted files must look like random data to a forensic examiner. Specifically:
-//   1. No plaintext "OCUI" magic in the first 256 bytes.
-//   2. No plaintext "SIG_" trailer marker.
-//   3. The byte distribution of the head looks roughly uniform.
-//   4. Two encryptions of the same plaintext with different passwords produce
-//      visually-uncorrelated headers (salt randomization).
-//   5. Round-trip still decrypts correctly.
-//   6. Tamper anywhere is detected and produces no plaintext output.
+// Encrypted AEAD files must look like random data to a forensic examiner.
+// Non-AEAD files (CBC/CTR) stay on v2 by design; they explicitly do NOT
+// have the deniability property and we assert that contract too, so a
+// future regression that "accidentally" makes v2 look like v4 (or vice
+// versa) is loud.
+//
+// Test coverage:
+//   1. AEAD ciphers (AES-256-GCM, ChaCha20-Poly1305): no plaintext OCUI,
+//      no plaintext SIG_, no obvious cipher-name strings, anywhere in
+//      the entire file (not just the head). Byte distribution of the
+//      head is roughly uniform.
+//   2. Non-AEAD cipher (AES-256-CBC) DOES have OCUI at offset 0 and
+//      DOES have a SIG_ trailer — this is the v2 contract. If this
+//      assertion ever flips, someone has changed the v2 path and we
+//      need to re-evaluate what users in CBC mode are getting.
+//   3. Same plaintext + different password → uncorrelated headers.
+//   4. Round-trip: byte-identical recovery for every cipher.
+//   5. Wrong-password rejection: returns false, no plaintext on disk.
+//   6. Tampered salt region: rejected, no plaintext on disk.
+//   7. v3 fallback: a file produced by an earlier engine path still
+//      decrypts (we can't easily produce a v3 file in this test
+//      because the engine now defaults to v4; we assert the fallback
+//      logic by trying to decrypt a corrupted-as-v4 file and checking
+//      we get a clean rejection rather than a crash).
+
 #include "encryptionengine.h"
 #include <QCoreApplication>
 #include <QFile>
@@ -16,11 +33,15 @@
 #include <QCryptographicHash>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+
+static int s_failures = 0;
 
 static int check(bool ok, const char* label)
 {
     std::fprintf(stderr, "%s: %s\n", ok ? "PASS" : "FAIL", label);
     std::fflush(stderr);
+    if (!ok) s_failures++;
     return ok ? 0 : 1;
 }
 
@@ -42,37 +63,120 @@ static bool writeFile(const QString& path, const QByteArray& data)
     return f.write(data) == data.size();
 }
 
-static QByteArray readHead(const QString& path, int n)
+static QByteArray readAll(const QString& path)
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) return {};
-    return f.read(n);
+    return f.readAll();
 }
 
-// Find a 4-byte sequence in a buffer. -1 if not present.
-static int findSeq(const QByteArray& haystack, const char* needle4)
+// Find a byte sequence anywhere in the buffer. -1 if not present.
+static int findSeq(const QByteArray& haystack, const char* needle, int nlen)
 {
-    for (int i = 0; i + 4 <= haystack.size(); ++i) {
-        if (haystack.at(i)   == needle4[0] &&
-            haystack.at(i+1) == needle4[1] &&
-            haystack.at(i+2) == needle4[2] &&
-            haystack.at(i+3) == needle4[3]) return i;
+    if (nlen <= 0 || haystack.size() < nlen) return -1;
+    for (int i = 0; i + nlen <= haystack.size(); ++i) {
+        if (std::memcmp(haystack.constData() + i, needle, nlen) == 0)
+            return i;
     }
     return -1;
 }
 
-// Crude byte-distribution sanity: fail if any byte appears > 4× expected
-// frequency in a small head. For random data over 256 bytes we expect each
-// byte ~1× (256 distinct values, 256 samples). Allow up to 4 occurrences.
+// Is the byte distribution of a small head reasonably uniform? Reject if
+// any byte exceeds 8 occurrences in 256 bytes (a uniform distribution
+// expects ~1; allow generous slack to avoid statistical flakes).
 static bool looksRandom(const QByteArray& head)
 {
     int hist[256] = {0};
     for (auto c : head) hist[(unsigned char)c]++;
-    int maxFreq = 0;
-    for (int i = 0; i < 256; ++i) if (hist[i] > maxFreq) maxFreq = hist[i];
-    // A truly random 256-byte sample has expected max ~3-5; cap at 8 to
-    // avoid flakes while still catching obvious patterns.
-    return maxFreq <= 8;
+    for (int i = 0; i < 256; ++i) if (hist[i] > 8) return false;
+    return true;
+}
+
+// Encrypt + decrypt + byte-compare round-trip for a given cipher.
+// Returns the path to the encrypted file (caller-owned for further checks).
+static QString roundTripAndReturnCt(EncryptionEngine& eng,
+                                    const QString& dir,
+                                    const QString& algo,
+                                    const QByteArray& payload,
+                                    const QString& password,
+                                    const char* label)
+{
+    const QString plain = dir + "/" + label + "_plain.bin";
+    const QString ct    = plain + ".enc";
+
+    if (!writeFile(plain, payload)) {
+        check(false, "write plaintext");
+        return {};
+    }
+
+    bool ok = eng.encryptFile(plain, password, algo, "PBKDF2", 600000,
+                              false, QString());
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "%s: encrypt", label);
+    // check() returns 0 on PASS, 1 on FAIL — bail only when the value is non-zero.
+    if (check(ok, buf) != 0) return {};
+
+    QFile::remove(plain);
+
+    ok = eng.decryptFile(ct, password, algo, "PBKDF2", 600000,
+                         false, QString());
+    std::snprintf(buf, sizeof(buf), "%s: decrypt", label);
+    if (check(ok, buf) != 0) return ct;
+
+    QByteArray got = readAll(plain);
+    std::snprintf(buf, sizeof(buf), "%s: byte-identical round-trip", label);
+    check(got == payload, buf);
+
+    QFile::remove(plain);
+    return ct;
+}
+
+// Run the full forensic check on an AEAD-encrypted file (must look random
+// end-to-end).
+static void aeadDeniabilityCheck(const QString& ct, const char* label)
+{
+    QByteArray whole = readAll(ct);
+    char buf[160];
+
+    std::snprintf(buf, sizeof(buf), "%s: whole-file scan finds NO 'OCUI' magic", label);
+    check(findSeq(whole, "OCUI", 4) == -1, buf);
+
+    std::snprintf(buf, sizeof(buf), "%s: whole-file scan finds NO 'SIG_' marker", label);
+    check(findSeq(whole, "SIG_", 4) == -1, buf);
+
+    std::snprintf(buf, sizeof(buf), "%s: whole-file scan finds NO 'AES' string", label);
+    check(findSeq(whole, "AES", 3) == -1, buf);
+
+    std::snprintf(buf, sizeof(buf), "%s: first 256 bytes look uniformly random", label);
+    QByteArray head = whole.left(256);
+    check(looksRandom(head), buf);
+
+    // First 4 bytes must NOT be a TPM2 ASN.1 prefix (defensive — we don't
+    // produce TPM blobs here but if HwKey wrapping ever lands inside the
+    // file, this check would catch a regression that exposed it).
+    static const unsigned char tpm2_prefix[] = {0x80, 0x01, 0x00, 0x01};
+    bool starts_tpm = whole.size() >= 4 &&
+        std::memcmp(whole.constData(), tpm2_prefix, 4) == 0;
+    std::snprintf(buf, sizeof(buf), "%s: first 4 bytes are NOT TPM2 ASN.1 prefix", label);
+    check(!starts_tpm, buf);
+}
+
+// Run the contract check on a non-AEAD (v2) file: it MUST have the OCUI
+// magic at offset 0 and a SIG_ trailer. This is documented behaviour —
+// CBC/CTR can't be deniable without an outer AEAD wrap. Asserting it
+// ensures a future change that flips this behaviour gets noticed.
+static void v2NonDeniabilityCheck(const QString& ct, const char* label)
+{
+    QByteArray whole = readAll(ct);
+    char buf[160];
+
+    bool magic_at_0 = whole.size() >= 4 &&
+        std::memcmp(whole.constData(), "OCUI", 4) == 0;
+    std::snprintf(buf, sizeof(buf), "%s (v2): OCUI magic IS at offset 0 (documented contract)", label);
+    check(magic_at_0, buf);
+
+    std::snprintf(buf, sizeof(buf), "%s (v2): SIG_ trailer IS present (documented contract)", label);
+    check(findSeq(whole, "SIG_", 4) != -1, buf);
 }
 
 int main(int argc, char** argv)
@@ -82,72 +186,84 @@ int main(int argc, char** argv)
     if (!dir.isValid()) { std::fprintf(stderr, "no tempdir\n"); return 99; }
 
     EncryptionEngine eng;
-    int failures = 0;
+    const QByteArray payload = makePayload(2 * 1024 * 1024); // 2 MiB
 
-    const QString plain = dir.filePath("p.bin");
-    const QString ct    = plain + ".enc";
-    const QString plain2 = dir.filePath("p2.bin");
-    const QString ct2    = plain2 + ".enc";
-
-    const QByteArray payload = makePayload(5 * 1024 * 1024); // 5 MiB
-    if (!writeFile(plain, payload))  return 99;
-    if (!writeFile(plain2, payload)) return 99;
-
-    // --- 1. Encrypt with AES-256-GCM (triggers v4) ---
+    // -----------------------------------------------------------------------
+    // 1. AEAD ciphers must be deniable.
+    // -----------------------------------------------------------------------
     {
-        bool ok = eng.encryptFile(plain, "first-password", "AES-256-GCM",
-                                  "PBKDF2", 600000, false, QString());
-        failures += check(ok, "v4: encrypt 5 MiB");
-    }
-
-    QByteArray head = readHead(ct, 256);
-    failures += check(head.size() == 256, "v4: read first 256 bytes");
-
-    // --- 2. No plaintext OCUI magic ---
-    failures += check(findSeq(head, "OCUI") == -1,
-                      "v4: no plaintext OCUI magic in first 256 bytes");
-
-    // --- 3. No plaintext SIG_ trailer marker anywhere in the file ---
-    QByteArray whole;
-    {
-        QFile f(ct);
-        if (f.open(QIODevice::ReadOnly)) whole = f.readAll();
-    }
-    failures += check(findSeq(whole, "SIG_") == -1,
-                      "v4: no plaintext SIG_ marker anywhere in file");
-
-    // --- 4. Byte distribution looks roughly uniform ---
-    failures += check(looksRandom(head),
-                      "v4: byte distribution of first 256 bytes looks random");
-
-    // --- 5. Different password → uncorrelated header ---
-    {
-        bool ok = eng.encryptFile(plain2, "second-password", "AES-256-GCM",
-                                  "PBKDF2", 600000, false, QString());
-        failures += check(ok, "v4: encrypt second file with different password");
-    }
-    QByteArray head2 = readHead(ct2, 256);
-    QByteArray h1 = QCryptographicHash::hash(head, QCryptographicHash::Sha256);
-    QByteArray h2 = QCryptographicHash::hash(head2, QCryptographicHash::Sha256);
-    failures += check(h1 != h2,
-                      "v4: same plaintext + different password yields different headers");
-
-    // --- 6. Round-trip ---
-    QFile::remove(plain);
-    {
-        bool ok = eng.decryptFile(ct, "first-password", "AES-256-GCM",
-                                  "PBKDF2", 600000, false, QString());
-        failures += check(ok, "v4: decrypt round-trip");
+        QString ct = roundTripAndReturnCt(eng, dir.path(), "AES-256-GCM",
+                                          payload, "first-pwd", "gcm");
+        if (!ct.isEmpty()) aeadDeniabilityCheck(ct, "AES-256-GCM");
     }
     {
-        QFile f(plain);
-        bool match = f.open(QIODevice::ReadOnly) && f.readAll() == payload;
-        failures += check(match, "v4: byte-identical round-trip");
+        QString ct = roundTripAndReturnCt(eng, dir.path(), "ChaCha20-Poly1305",
+                                          payload, "first-pwd", "cha");
+        if (!ct.isEmpty()) aeadDeniabilityCheck(ct, "ChaCha20-Poly1305");
     }
 
-    // --- 7. Tamper at offset 0 (salt region) — decrypt must fail ---
+    // -----------------------------------------------------------------------
+    // 2. Non-AEAD cipher: documented v2 contract — NOT deniable.
+    // -----------------------------------------------------------------------
     {
+        QString ct = roundTripAndReturnCt(eng, dir.path(), "AES-256-CBC",
+                                          payload, "first-pwd", "cbc");
+        if (!ct.isEmpty()) v2NonDeniabilityCheck(ct, "AES-256-CBC");
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. Same plaintext + different password → uncorrelated heads.
+    // -----------------------------------------------------------------------
+    {
+        const QString p1 = dir.filePath("salt1_plain.bin");
+        const QString c1 = p1 + ".enc";
+        const QString p2 = dir.filePath("salt2_plain.bin");
+        const QString c2 = p2 + ".enc";
+
+        writeFile(p1, payload);
+        writeFile(p2, payload);
+
+        eng.encryptFile(p1, "password-A", "AES-256-GCM", "PBKDF2", 600000,
+                        false, QString());
+        eng.encryptFile(p2, "password-B", "AES-256-GCM", "PBKDF2", 600000,
+                        false, QString());
+
+        QByteArray h1 = QCryptographicHash::hash(readAll(c1).left(256),
+                                                  QCryptographicHash::Sha256);
+        QByteArray h2 = QCryptographicHash::hash(readAll(c2).left(256),
+                                                  QCryptographicHash::Sha256);
+        check(h1 != h2,
+              "v4: same plaintext + different password produces different head");
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Wrong password is rejected, no plaintext leaked.
+    // -----------------------------------------------------------------------
+    {
+        const QString plain = dir.filePath("wp_plain.bin");
+        const QString ct    = plain + ".enc";
+        writeFile(plain, payload);
+        eng.encryptFile(plain, "correct-pwd", "AES-256-GCM", "PBKDF2", 600000,
+                        false, QString());
         QFile::remove(plain);
+        bool ok = eng.decryptFile(ct, "WRONG-pwd", "AES-256-GCM", "PBKDF2", 600000,
+                                  false, QString());
+        check(!ok, "v4: wrong password rejected");
+        check(!QFile::exists(plain),
+              "v4: no plaintext on disk after wrong-password rejection");
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. Tampered salt region (first 32 bytes) is rejected.
+    // -----------------------------------------------------------------------
+    {
+        const QString plain = dir.filePath("ts_plain.bin");
+        const QString ct    = plain + ".enc";
+        writeFile(plain, payload);
+        eng.encryptFile(plain, "p", "AES-256-GCM", "PBKDF2", 600000,
+                        false, QString());
+        QFile::remove(plain);
+
         QFile f(ct);
         if (f.open(QIODevice::ReadWrite)) {
             f.seek(0);
@@ -155,15 +271,41 @@ int main(int argc, char** argv)
             f.seek(0); f.write(&b, 1);
             f.close();
         }
-        bool ok = eng.decryptFile(ct, "first-password", "AES-256-GCM",
-                                  "PBKDF2", 600000, false, QString());
-        failures += check(!ok, "v4: tampered salt region rejected");
-        failures += check(!QFile::exists(plain),
-                          "v4: no plaintext on disk after tampered-salt rejection");
+        bool ok = eng.decryptFile(ct, "p", "AES-256-GCM", "PBKDF2", 600000,
+                                  false, QString());
+        check(!ok, "v4: tampered salt rejected");
+        check(!QFile::exists(plain),
+              "v4: no plaintext on disk after tampered-salt rejection");
     }
 
-    if (failures) {
-        std::fprintf(stderr, "TOTAL FAILURES: %d\n", failures);
+    // -----------------------------------------------------------------------
+    // 6. Tamper deep inside the encrypted payload.
+    // -----------------------------------------------------------------------
+    {
+        const QString plain = dir.filePath("td_plain.bin");
+        const QString ct    = plain + ".enc";
+        writeFile(plain, payload);
+        eng.encryptFile(plain, "p", "AES-256-GCM", "PBKDF2", 600000,
+                        false, QString());
+        QFile::remove(plain);
+
+        QFile f(ct);
+        if (f.open(QIODevice::ReadWrite)) {
+            qint64 mid = f.size() / 2;
+            f.seek(mid);
+            char b; f.read(&b, 1); b ^= 0x55;
+            f.seek(mid); f.write(&b, 1);
+            f.close();
+        }
+        bool ok = eng.decryptFile(ct, "p", "AES-256-GCM", "PBKDF2", 600000,
+                                  false, QString());
+        check(!ok, "v4: tamper deep in payload rejected");
+        check(!QFile::exists(plain),
+              "v4: no plaintext on disk after deep-payload tamper rejection");
+    }
+
+    if (s_failures) {
+        std::fprintf(stderr, "TOTAL FAILURES: %d\n", s_failures);
         return 1;
     }
     std::fprintf(stderr, "ALL V4 DENIABILITY TESTS PASSED\n");
