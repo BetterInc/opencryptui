@@ -73,6 +73,14 @@ private slots:
     void on_wipePatternComboBox_currentIndexChanged(int index);
 
 private:
+    // Sets the iteration spinbox minimum to the actual per-KDF floor enforced
+    // by the engine (Argon2=3, Scrypt=16384, PBKDF2=600000). Wired to each
+    // KDF combobox's currentTextChanged so switching KDF instantly updates
+    // the spinbox; the value gets auto-clamped by Qt if it was below the new
+    // minimum. The corresponding tooltip is updated too.
+    void applyKdfIterationFloor(const QString &kdf, class QSpinBox *spinBox);
+
+private:
     Ui::MainWindow *ui;
     EncryptionEngine encryptionEngine;
     EncryptionWorker *worker;

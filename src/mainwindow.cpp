@@ -170,13 +170,64 @@ void MainWindow::setupComboBoxes()
     ui->folderKdfComboBox->setCurrentText("Argon2");
     ui->diskKdfComboBox->setCurrentText("Argon2");
 
-    ui->iterationsSpinBox->setValue(10);
-    ui->folderIterationsSpinBox->setValue(10);
-    ui->diskIterationsSpinBox->setValue(10);
+    // Wire each KDF combo to its iteration spinbox so the spinbox minimum
+    // tracks the engine's per-KDF floor (Argon2=3, Scrypt=16384, PBKDF2=600000).
+    // Without this the spinbox would let users type a sub-floor value the
+    // engine refuses — the user-visible behavior would be a confusing error
+    // dialog rather than a UI guard. With it: switching KDF instantly bumps
+    // (or relaxes) the spinbox minimum, and Qt auto-clamps the current value
+    // if it falls below the new minimum (visible jump — honest).
+    connect(ui->kdfComboBox, &QComboBox::currentTextChanged, this,
+            [this](const QString &k) { applyKdfIterationFloor(k, ui->iterationsSpinBox); });
+    connect(ui->folderKdfComboBox, &QComboBox::currentTextChanged, this,
+            [this](const QString &k) { applyKdfIterationFloor(k, ui->folderIterationsSpinBox); });
+    connect(ui->diskKdfComboBox, &QComboBox::currentTextChanged, this,
+            [this](const QString &k) { applyKdfIterationFloor(k, ui->diskIterationsSpinBox); });
+
+    // Apply the floor immediately for the Argon2 default just selected above
+    // (currentTextChanged may not have fired if Argon2 was already the index).
+    applyKdfIterationFloor("Argon2", ui->iterationsSpinBox);
+    applyKdfIterationFloor("Argon2", ui->folderIterationsSpinBox);
+    applyKdfIterationFloor("Argon2", ui->diskIterationsSpinBox);
 
     ui->hmacCheckBox->setChecked(true);
     ui->folderHmacCheckBox->setChecked(true);
     ui->diskHmacCheckBox->setChecked(true);
+}
+
+void MainWindow::applyKdfIterationFloor(const QString &kdf, QSpinBox *spinBox)
+{
+    if (!spinBox) return;
+    const int floor = EncryptionEngine::iterationFloorForKdf(kdf);
+
+    // setMinimum auto-clamps current value if below the new minimum — that
+    // shows the user the visible bump rather than silently changing it
+    // behind their back at encrypt time.
+    if (spinBox->maximum() < floor) {
+        spinBox->setMaximum(floor);
+    }
+    spinBox->setMinimum(floor);
+
+    QString tip;
+    if (kdf == QLatin1String("Argon2")) {
+        tip = QStringLiteral(
+            "Argon2 time-cost (t parameter). Minimum 3 — Argon2 is memory-hard, "
+            "so its security comes mostly from memory cost (1 GiB by default), "
+            "not iteration count. 3 is the OWASP-recommended baseline.");
+    } else if (kdf == QLatin1String("Scrypt")) {
+        tip = QStringLiteral(
+            "Scrypt cost parameter N. Minimum 16,384 — Scrypt's security comes "
+            "from memory-hardness; values below this offer no meaningful "
+            "protection against GPU/ASIC attackers.");
+    } else if (kdf == QLatin1String("PBKDF2")) {
+        tip = QStringLiteral(
+            "PBKDF2 iteration count. Minimum 600,000 (OWASP 2023 for SHA-256/512). "
+            "PBKDF2 has no memory-hardness, so a high iteration count is the only "
+            "defence against brute-force.");
+    } else {
+        tip = QStringLiteral("Iteration count for the selected KDF.");
+    }
+    spinBox->setToolTip(tip);
 }
 
 void MainWindow::updateSecurityStatus(const QString &path, QLabel *statusLabel)
@@ -653,9 +704,16 @@ void MainWindow::on_m_cryptoProviderComboBox_currentIndexChanged(const QString &
 
         if (kdfs.contains(currentFolderKDF))
             ui->folderKdfComboBox->setCurrentText(currentFolderKDF);
-            
+
         if (kdfs.contains(currentDiskKDF))
             ui->diskKdfComboBox->setCurrentText(currentDiskKDF);
+
+        // Re-apply the iteration floors after the KDF combos repopulated.
+        // The currentTextChanged signals above may not fire if the resolved
+        // selection happens to equal what the combo already showed.
+        applyKdfIterationFloor(ui->kdfComboBox->currentText(), ui->iterationsSpinBox);
+        applyKdfIterationFloor(ui->folderKdfComboBox->currentText(), ui->folderIterationsSpinBox);
+        applyKdfIterationFloor(ui->diskKdfComboBox->currentText(), ui->diskIterationsSpinBox);
 
         // Update hardware acceleration status
         checkHardwareAcceleration();

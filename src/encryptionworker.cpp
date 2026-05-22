@@ -95,12 +95,24 @@ void EncryptionWorker::processDiskOperation()
             } else {
                 SECURE_LOG(INFO, "EncryptionWorker", "Starting standard disk encryption.");
                 success = m_engine.encryptDisk(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_keyfilePaths);
-                if (!success) errorMessage = "Disk encryption failed in engine.";
+                if (!success) {
+                    // Prefer the engine's specific reason (sub-floor iters,
+                    // Argon2 OOM, etc.) over the generic fallback.
+                    const QString engineErr = m_engine.lastError();
+                    errorMessage = engineErr.isEmpty()
+                        ? QStringLiteral("Disk encryption failed in engine.")
+                        : engineErr;
+                }
             }
         } else {
             SECURE_LOG(INFO, "EncryptionWorker", "Starting standard disk decryption.");
             success = m_engine.decryptDisk(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_keyfilePaths);
-            if (!success) errorMessage = "Disk decryption failed in engine.";
+            if (!success) {
+                const QString engineErr = m_engine.lastError();
+                errorMessage = engineErr.isEmpty()
+                    ? QStringLiteral("Disk decryption failed in engine.")
+                    : engineErr;
+            }
         }
     }
     catch (const std::exception& e)
@@ -135,19 +147,27 @@ void EncryptionWorker::process()
             if (m_isFile)
             {
                 bool success = m_engine.encryptFile(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
-                result = success ? m_path + ".encrypted" : "Failed to encrypt file";
+                result = success ? m_path + ".encrypted" : m_engine.lastError().isEmpty()
+                    ? QStringLiteral("Failed to encrypt file") : m_engine.lastError();
                 emit progress(100);
-                emit finished(QString("File encrypted successfully. Output: %1").arg(result), success, true);
+                emit finished(success
+                    ? QString("File encrypted successfully. Output: %1").arg(result)
+                    : result,
+                    success, true);
             }
             else
             {
                 emit progress(10);
                 emit estimatedTime("Compressing folder... (est: 30 seconds)");
-                
+
                 bool success = m_engine.encryptFolder(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
-                result = success ? m_path + ".encrypted" : "Failed to encrypt folder";
+                result = success ? m_path + ".encrypted" : m_engine.lastError().isEmpty()
+                    ? QStringLiteral("Failed to encrypt folder") : m_engine.lastError();
                 emit progress(100);
-                emit finished(QString("Folder encrypted successfully. Output: %1").arg(result), success, false);
+                emit finished(success
+                    ? QString("Folder encrypted successfully. Output: %1").arg(result)
+                    : result,
+                    success, false);
             }
         }
         else
@@ -155,19 +175,27 @@ void EncryptionWorker::process()
             if (m_isFile)
             {
                 bool success = m_engine.decryptFile(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
-                result = success ? m_path.left(m_path.lastIndexOf(".encrypted")) : "Failed to decrypt file";
+                result = success ? m_path.left(m_path.lastIndexOf(".encrypted")) : m_engine.lastError().isEmpty()
+                    ? QStringLiteral("Failed to decrypt file") : m_engine.lastError();
                 emit progress(100);
-                emit finished(QString("File decrypted successfully. Output: %1").arg(result), success, true);
+                emit finished(success
+                    ? QString("File decrypted successfully. Output: %1").arg(result)
+                    : result,
+                    success, true);
             }
             else
             {
                 emit progress(10);
                 emit estimatedTime("Decrypting archive... (est: 15 seconds)");
-                
+
                 bool success = m_engine.decryptFolder(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
-                result = success ? m_path.left(m_path.lastIndexOf(".encrypted")) : "Failed to decrypt folder";
+                result = success ? m_path.left(m_path.lastIndexOf(".encrypted")) : m_engine.lastError().isEmpty()
+                    ? QStringLiteral("Failed to decrypt folder") : m_engine.lastError();
                 emit progress(100);
-                emit finished(QString("Folder decrypted successfully. Output: %1").arg(result), success, false);
+                emit finished(success
+                    ? QString("Folder decrypted successfully. Output: %1").arg(result)
+                    : result,
+                    success, false);
             }
         }
     }

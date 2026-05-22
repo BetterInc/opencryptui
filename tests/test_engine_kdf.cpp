@@ -57,8 +57,10 @@ int main(int argc, char** argv)
 
     // --- 4. Argon2 returns non-empty, advertised KDFs work ---------------
     {
-        QByteArray kArgon = eng.deriveKeyWithoutKeyfile(pwd, saltA, "Argon2", 1, keySize);
-        failures += check(!kArgon.isEmpty(), "Argon2 non-empty (iter=1)");
+        // Argon2 floor is 3 (OWASP). The engine refuses sub-floor counts
+        // instead of silently clamping, so we use the floor directly here.
+        QByteArray kArgon = eng.deriveKeyWithoutKeyfile(pwd, saltA, "Argon2", 3, keySize);
+        failures += check(!kArgon.isEmpty(), "Argon2 non-empty (iter=3, floor)");
 
         QByteArray kPbk = eng.deriveKeyWithoutKeyfile(pwd, saltA, "PBKDF2", 600000, keySize);
         failures += check(!kPbk.isEmpty(), "PBKDF2 non-empty (600k)");

@@ -104,6 +104,23 @@ public:
     QStringList supportedCiphers() const;
     QStringList supportedKDFs() const;
 
+    // Last user-facing error from cryptOperation / deriveKey. Set when the
+    // engine refuses a request (e.g. sub-floor iterations, Argon2 memory
+    // allocation failure) so the worker layer can surface a clear, actionable
+    // dialog rather than a generic "operation failed". Cleared at the start
+    // of each cryptOperation. Stays empty when the engine succeeds.
+    QString lastError() const { return m_lastError; }
+
+    // OWASP / NIST baseline floors. Public so the UI can pin spinbox
+    // minimums to the same value the engine enforces — keeping UI and engine
+    // in lock-step prevents the "user picks N, engine silently runs M" lie.
+    static int iterationFloorForKdf(const QString& kdf) {
+        if (kdf == "Argon2") return 3;
+        if (kdf == "Scrypt") return 16384;
+        if (kdf == "PBKDF2") return 600000;
+        return 1;
+    }
+
 private:
     // Removed lastIv storage for security reasons
 
@@ -230,6 +247,10 @@ private:
     // Pointer to the current active provider
     CryptoProvider* m_currentProvider;
     QString m_currentProviderName;
+    // Reset at the start of cryptOperation. Engine writes a user-facing
+    // message here whenever it refuses a request that bypassed the UI guards
+    // (sub-floor iterations, KDF/alg-not-supported-by-provider, Argon2 OOM).
+    QString m_lastError;
     
     // Initialize all available providers
     void initializeProviders();

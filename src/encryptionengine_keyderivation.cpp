@@ -113,8 +113,34 @@ QByteArray EncryptionEngine::performKeyDerivation(const QByteArray& passwordWith
         return QByteArray();
     }
 
-    // Ensure minimum secure iteration counts
+    // Engine-layer defense in depth: refuse sub-floor iteration counts with a
+    // user-facing error. The UI pins spinbox minimums to the same floor, so a
+    // user clicking through the app can never land here. This branch fires
+    // only when something bypasses the UI (script, modified binary, future
+    // API caller). NEVER silently clamp — that's the antipattern we're killing.
     int secureIterations = calculateSecureIterations(kdf, iterations);
+    if (secureIterations < 0) {
+        const int floor = iterationFloorForKdf(kdf);
+        QString suggestion;
+        if (kdf == "PBKDF2") {
+            suggestion = QStringLiteral("Raise the iteration count or pick Argon2/Scrypt.");
+        } else if (kdf == "Scrypt") {
+            suggestion = QStringLiteral("Raise the iteration count or pick Argon2.");
+        } else if (kdf == "Argon2") {
+            suggestion = QStringLiteral("Raise the iteration count.");
+        } else {
+            suggestion = QStringLiteral("Raise the iteration count or pick a supported KDF.");
+        }
+        m_lastError = QStringLiteral(
+            "%1 requires at least %2 iterations (OWASP 2023). "
+            "You requested %3. %4")
+            .arg(kdf)
+            .arg(floor)
+            .arg(iterations)
+            .arg(suggestion);
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", m_lastError);
+        return QByteArray();
+    }
 
     // Allocate key with secure memory locking
     QScopedArrayPointer<char> key(new char[keySize]);
@@ -129,20 +155,34 @@ QByteArray EncryptionEngine::performKeyDerivation(const QByteArray& passwordWith
     try {
         // Key derivation with enhanced security parameters
         if (kdf == "Argon2") {
-            // Use Argon2id - resistance against side-channel and timing attacks
+            // Use Argon2id - resistance against side-channel and timing attacks.
+            // Fixed memory cost of 1 GiB and parallelism 4 — strong defaults.
+            // We deliberately do NOT silently fall back to a lower memory cost
+            // on OOM: that would weaken the KDF behind the user's back. If
+            // allocation fails we surface the error and let the user free
+            // memory or pick a different KDF.
             int argon2Result = argon2id_hash_raw(
                 secureIterations,      // Time cost
-                1 << 20,               // Memory: 1 GB
+                1 << 20,               // Memory: 1 GiB (KiB units)
                 4,                     // Parallelism factor
-                passwordWithKeyfile.constData(), 
+                passwordWithKeyfile.constData(),
                 passwordWithKeyfile.size(),
-                salt.constData(), 
+                salt.constData(),
                 salt.size(),
-                reinterpret_cast<unsigned char*>(key.data()), 
+                reinterpret_cast<unsigned char*>(key.data()),
                 keySize
             );
 
             derivationSuccessful = (argon2Result == ARGON2_OK);
+
+            if (argon2Result == ARGON2_MEMORY_ALLOCATION_ERROR) {
+                m_lastError = QStringLiteral(
+                    "Argon2 needs 1 GiB of memory to derive your key but the "
+                    "allocation failed on this machine. Close memory-heavy "
+                    "applications and retry, or pick another KDF (Scrypt / "
+                    "PBKDF2 — both far weaker but lower-memory).");
+                SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", m_lastError);
+            }
         }
         else if (kdf == "PBKDF2") {
             // Enhanced PBKDF2 with SHA-512
@@ -214,30 +254,19 @@ QByteArray EncryptionEngine::performKeyDerivation(const QByteArray& passwordWith
 
 int EncryptionEngine::calculateSecureIterations(const QString& kdf, int requestedIterations)
 {
-    // Minimum secure iteration recommendations
-    // PBKDF2 floor raised to 600 000 per OWASP 2024 / NIST SP 800-132 for SHA-256/512.
-    const int ARGON2_MIN_ITERATIONS = 3;      // Cryptographically secure baseline
-    const int PBKDF2_MIN_ITERATIONS = 600000; // OWASP 2024 / NIST SP 800-132 for SHA-256/512
-    const int SCRYPT_MIN_ITERATIONS = 16384;  // Secure baseline
-
-    if (requestedIterations < 1) {
-        // Default to secure baselines if input is invalid
-        if (kdf == "Argon2") return ARGON2_MIN_ITERATIONS;
-        if (kdf == "PBKDF2") return PBKDF2_MIN_ITERATIONS;
-        if (kdf == "Scrypt") return SCRYPT_MIN_ITERATIONS;
+    // STRICT validation: refuse below the per-KDF floor instead of silently
+    // clamping up. The user-facing UI (mainwindow.cpp::applyKdfIterationFloor)
+    // pins each spinbox minimum to iterationFloorForKdf() so a user can never
+    // type a sub-floor value in the first place. This function is the engine-
+    // layer defense-in-depth: if anything bypasses the UI (scripted use,
+    // modified UI, future API caller), we refuse loudly rather than substitute.
+    //
+    // Returns -1 to signal "refused — sub-floor value, do not derive a key".
+    // Callers MUST check for -1 and propagate a user-facing error.
+    const int floor = iterationFloorForKdf(kdf);
+    if (requestedIterations < floor) {
+        return -1;
     }
-
-    // Scale iterations based on KDF
-    if (kdf == "Argon2") {
-        return std::max(requestedIterations, ARGON2_MIN_ITERATIONS);
-    }
-    else if (kdf == "PBKDF2") {
-        return std::max(requestedIterations, PBKDF2_MIN_ITERATIONS);
-    }
-    else if (kdf == "Scrypt") {
-        return std::max(requestedIterations, SCRYPT_MIN_ITERATIONS);
-    }
-
     return requestedIterations;
 }
 

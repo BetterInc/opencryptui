@@ -17,9 +17,16 @@
 
 bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &outputPath, const QString &password, const QString &algorithm, bool encrypt, const QString &kdf, int iterations, bool useHMAC, const QString &customHeader, const QStringList &keyfilePaths)
 {
+    // Reset the user-facing error so a stale message from a prior failure
+    // can't leak into this operation's reporting. Any helper down the stack
+    // (deriveKey, performKeyDerivation, ...) writes here when it refuses.
+    m_lastError.clear();
+
     if (!m_currentProvider)
     {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "No crypto provider set");
+        m_lastError = QStringLiteral("No crypto provider is selected. "
+                                     "Pick OpenSSL or libsodium and retry.");
         return false;
     }
 
@@ -35,10 +42,12 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
     quint8 kId   = kdfId(kdf);
     if (algId == ALG_ID_UNKNOWN) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Unknown algorithm: %1").arg(algorithm));
+        m_lastError = QStringLiteral("Unsupported algorithm: %1").arg(algorithm);
         return false;
     }
     if (kId == KDF_ID_UNKNOWN) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Unknown KDF: %1").arg(kdf));
+        m_lastError = QStringLiteral("Unsupported KDF: %1").arg(kdf);
         return false;
     }
 
