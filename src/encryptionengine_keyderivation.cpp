@@ -18,23 +18,21 @@
 // deriveKey().
 
 QByteArray EncryptionEngine::deriveKey(const QString& password, const QByteArray& salt, const QStringList& keyfilePaths, const QString& kdf, int iterations) {
-    // SecureString locks the UTF-8 bytes into RAM and zeroes them on destruction,
-    // eliminating any early-return leak paths that existed with the manual
-    // sodium_mlock / sodium_memzero / sodium_munlock pattern.
-    SecureString password_buf = SecureString::from_qstring(password);
+    // Thin wrapper: copy the QString's UTF-8 into a locked SecureString and
+    // delegate. The caller's QString isn't wiped here — wiping a
+    // `const QString&` via const_cast corrupted reused passwords in the past
+    // (see commit ba38107). The mlocked SecureString this creates is the
+    // engine's own copy; it's zeroed when this function returns.
+    SecureString secure_pwd = SecureString::from_qstring(password);
+    return deriveKey(secure_pwd, salt, keyfilePaths, kdf, iterations);
+}
 
-    // Calculate HMAC of keyfiles instead of simply appending them
-    // This provides proper domain separation and prevents extension attacks
+QByteArray EncryptionEngine::deriveKey(const SecureString& password_buf, const QByteArray& salt, const QStringList& keyfilePaths, const QString& kdf, int iterations) {
+    // password_buf is the mlocked, zero-on-destroy primary password buffer.
+    // Everything we derive here is a copy of those bytes (or an HMAC of them
+    // with keyfiles mixed in); each derivative gets explicitly wiped before
+    // we return.
     QByteArray keyfileComponent;
-
-    // NOTE: We deliberately do NOT wipe the source `password` QString here.
-    // It's a `const QString&` from the caller; wiping it via const_cast
-    // corrupts the caller's variable, breaking any later reuse (e.g. the
-    // decryptFile call after encryptFile in the same scope uses the same
-    // QString, and a wiped password yields a different derived key →
-    // signature verification fails). QString zeroization needs to happen
-    // at the owner (the UI layer), not here. SECURITY.md documents the
-    // residual memory-hygiene gap.
 
     if (!keyfilePaths.isEmpty()) {
         // Use SHA-512 for HMAC operations

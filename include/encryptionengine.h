@@ -42,10 +42,26 @@ public:
     QString currentProvider() const;
     QStringList availableProviders() const;
 
+    // QString password overloads — convenience wrappers for callers that
+    // already hold the password as a QString (tests, legacy code, the
+    // benchmark path). They allocate a SecureString, copy in the UTF-8
+    // bytes, and delegate to the SecureString overload below. The
+    // intermediate QString remains in the caller's heap; the engine never
+    // creates its own QString copy.
     bool encryptFile(const QString& filePath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
     bool decryptFile(const QString& filePath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
     bool encryptFolder(const QString& folderPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
     bool decryptFolder(const QString& folderPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
+
+    // SecureString password overloads — the real implementations. The
+    // mlocked + zero-on-destroy SecureString flows through cryptOperation
+    // and into deriveKey without spawning extra QString copies. Use these
+    // from the worker / UI layer where the password is long-lived and
+    // sensitive.
+    bool encryptFile(const QString& filePath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
+    bool decryptFile(const QString& filePath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
+    bool encryptFolder(const QString& folderPath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
+    bool decryptFolder(const QString& folderPath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
     
     // Secure deletion methods
     bool secureDeleteFile(const QString& filePath, int passes = 3);
@@ -56,9 +72,11 @@ public:
     bool verifyOutputPathSecurity(const QString& filePath);
     bool checkAndFixFilePermissions(const QString& filePath, QFileDevice::Permissions desiredPermissions);
     
-    // Disk encryption methods
+    // Disk encryption methods (QString wrappers + SecureString reals — see file ops above).
     bool encryptDisk(const QString& diskPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QStringList& keyfilePaths = QStringList());
     bool decryptDisk(const QString& diskPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QStringList& keyfilePaths = QStringList());
+    bool encryptDisk(const QString& diskPath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QStringList& keyfilePaths = QStringList());
+    bool decryptDisk(const QString& diskPath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QStringList& keyfilePaths = QStringList());
     
     // Disk wiping methods
     bool secureWipeDisk(const QString& diskPath, int passes = 3, bool verifyWipe = true);
@@ -83,7 +101,12 @@ public:
 
     bool isHardwareAccelerationSupported() const;
 
+    // Key derivation entry points.
+    // QString variant: thin wrapper — converts to SecureString and delegates.
+    // SecureString variant: the real implementation. Performs the keyfile
+    // HMAC mixing, calls performKeyDerivation, returns the derived key.
     QByteArray deriveKey(const QString& password, const QByteArray& salt, const QStringList& keyfilePaths, const QString& kdf, int iterations);
+    QByteArray deriveKey(const class SecureString& password, const QByteArray& salt, const QStringList& keyfilePaths, const QString& kdf, int iterations);
     QByteArray deriveKeyWithoutKeyfile(const QString &password, const QString &salt, const QString &kdf, int iterations, int keySize);
 
     // Secure random number generation methods
@@ -231,7 +254,7 @@ private:
                                  quint8 algId, quint8 kId, int iterations,
                                  const QString& algorithm, const QString& outputPath);
     bool cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFile,
-                                 const QString& password,
+                                 const class SecureString& password,
                                  const QStringList& keyfilePaths,
                                  const QString& algorithm, const QString& kdf,
                                  int iterations, const QString& inputPath);
@@ -263,7 +286,7 @@ private:
     int calculateSecureIterations(const QString& kdf, int requestedIterations);
     
     // Encryption/decryption operations
-    bool cryptOperation(const QString& inputPath, const QString& outputPath, const QString& password, const QString& algorithm, bool encrypt, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths);
+    bool cryptOperation(const QString& inputPath, const QString& outputPath, const class SecureString& password, const QString& algorithm, bool encrypt, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths);
     
     // OpenSSL-specific encryption/decryption methods
     bool performStandardEncryption(EVP_CIPHER_CTX* ctx, const EVP_CIPHER* cipher, const QByteArray& key, const QByteArray& iv, QFile& inputFile, QFile& outputFile);

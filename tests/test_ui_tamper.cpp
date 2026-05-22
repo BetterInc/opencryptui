@@ -68,7 +68,12 @@ void TestOpenCryptUI::testTamperDetection()
     // Set up UI for decryption
     QPushButton *decryptButton = mainWindow->findChild<QPushButton *>("fileDecryptButton");
     filePathInput->setText(encryptedFilePath);
-    
+    // The password field is cleared on encrypt-click (security: don't keep
+    // the password in QLineEdit's internal QString longer than needed —
+    // see startWorker()). Real users re-type to decrypt; this test does
+    // the same.
+    passwordInput->setText("tampertest123");
+
     // Attempt to decrypt the tampered file
     QTest::mouseClick(decryptButton, Qt::LeftButton);
     // QTest::qWait(WAIT_TIME_LONG); // Remove explicit wait

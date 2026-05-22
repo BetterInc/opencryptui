@@ -19,7 +19,11 @@ void EncryptionWorker::setParameters(const QString &path, const QString &passwor
                                      const QString &kdf, int iterations, bool useHMAC, bool encrypt, bool isFile, const QString &customHeader, const QStringList &keyfilePaths)
 {
     this->m_path = path;
-    this->m_password = password;
+    // Copy the caller's QString password into our mlocked SecureString right
+    // here at the API boundary. The caller's QString is one short-lived copy
+    // we can't reach (Qt implicit sharing); from here down the engine sees
+    // only the SecureString.
+    this->m_password = SecureString::from_qstring(password);
     this->m_algorithm = algorithm;
     this->m_kdf = kdf;
     this->m_iterations = iterations;
@@ -36,7 +40,7 @@ void EncryptionWorker::setDiskParameters(const QString &diskPath, const QString 
                                       const QString &kdf, int iterations, bool useHMAC, bool encrypt, const QStringList &keyfilePaths)
 {
     this->m_path = diskPath;
-    this->m_password = password;
+    this->m_password = SecureString::from_qstring(password);
     this->m_algorithm = algorithm;
     this->m_kdf = kdf;
     this->m_iterations = iterations;
@@ -49,13 +53,13 @@ void EncryptionWorker::setDiskParameters(const QString &diskPath, const QString 
     this->m_keyfilePaths = keyfilePaths;
 }
 
-void EncryptionWorker::setDiskParametersWithHiddenVolume(const QString &diskPath, const QString &outerPassword, const QString &hiddenPassword, 
-                                                      qint64 hiddenVolumeSize, const QString &algorithm, const QString &kdf, 
+void EncryptionWorker::setDiskParametersWithHiddenVolume(const QString &diskPath, const QString &outerPassword, const QString &hiddenPassword,
+                                                      qint64 hiddenVolumeSize, const QString &algorithm, const QString &kdf,
                                                       int iterations, bool useHMAC, const QStringList &keyfilePaths)
 {
     this->m_path = diskPath;
-    this->m_password = outerPassword;
-    this->m_hiddenPassword = hiddenPassword;
+    this->m_password = SecureString::from_qstring(outerPassword);
+    this->m_hiddenPassword = SecureString::from_qstring(hiddenPassword);
     this->m_hiddenVolumeSize = hiddenVolumeSize;
     this->m_algorithm = algorithm;
     this->m_kdf = kdf;
@@ -383,21 +387,9 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
 
 EncryptionWorker::~EncryptionWorker()
 {
-    // Best-effort scrub of the password QStrings we held. QString is
-    // implicitly shared / ref-counted, so this only zeroes the storage
-    // that *this* QString instance currently points to — any earlier
-    // copies (e.g. the QLineEdit that produced the value, or QString
-    // detaches that happened during process()) are unaffected. The
-    // residual leak is documented in SECURITY.md ("Memory Safety").
-    // We do this anyway because the worker tends to be the last
-    // long-lived QString holder before deletion, so it has the highest
-    // chance of being a hot copy.
-    if (!m_password.isEmpty()) {
-        m_password.fill(QChar('\0'));
-    }
-    if (!m_hiddenPassword.isEmpty()) {
-        m_hiddenPassword.fill(QChar('\0'));
-    }
+    // m_password / m_hiddenPassword are SecureString now — their destructors
+    // run when the worker is destroyed and reliably zero + munlock the
+    // mlocked buffer. Nothing to do here.
 }
 
 void EncryptionWorker::processBenchmark()

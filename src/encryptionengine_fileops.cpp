@@ -1,4 +1,5 @@
 #include "encryptionengine.h"
+#include "secure_string.h"
 #include <QFile>
 #include <QProcess>
 #include <openssl/rand.h>
@@ -129,11 +130,18 @@ bool EncryptionEngine::decompressFolder(const QString& filePath, const QString& 
     return success;
 }
 
+// QString convenience wrapper — converts to mlocked SecureString and
+// delegates. Used by tests, the benchmark path, and any non-UI caller.
 bool EncryptionEngine::encryptFile(const QString& filePath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths) {
+    SecureString sp = SecureString::from_qstring(password);
+    return encryptFile(filePath, sp, algorithm, kdf, iterations, useHMAC, customHeader, keyfilePaths);
+}
+
+bool EncryptionEngine::encryptFile(const QString& filePath, const SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths) {
     SECURE_LOG(INFO, "EncryptionEngine", QString("Starting file encryption for file: %1").arg(filePath));
     SECURE_LOG(DEBUG, "EncryptionEngine", QString("Using algorithm: %1, KDF: %2, iterations: %3, HMAC: %4")
                        .arg(algorithm).arg(kdf).arg(iterations).arg(useHMAC ? "Yes" : "No"));
-    
+
     // Validate input file
     QFileInfo fileInfo(filePath);
     if (!fileInfo.exists() || !fileInfo.isFile() || !fileInfo.isReadable()) {
@@ -144,24 +152,29 @@ bool EncryptionEngine::encryptFile(const QString& filePath, const QString& passw
                              .arg(fileInfo.isReadable()));
         return false;
     }
-    
+
     QString outputPath = filePath + ".enc";
     bool success = cryptOperation(filePath, outputPath, password, algorithm, true, kdf, iterations, useHMAC, customHeader, keyfilePaths);
-    
+
     if (success) {
         SECURE_LOG(INFO, "EncryptionEngine", QString("File encryption completed successfully: %1").arg(outputPath));
     } else {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("File encryption failed: %1").arg(filePath));
     }
-    
+
     return success;
 }
 
 bool EncryptionEngine::decryptFile(const QString& filePath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths) {
+    SecureString sp = SecureString::from_qstring(password);
+    return decryptFile(filePath, sp, algorithm, kdf, iterations, useHMAC, customHeader, keyfilePaths);
+}
+
+bool EncryptionEngine::decryptFile(const QString& filePath, const SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths) {
     SECURE_LOG(INFO, "EncryptionEngine", QString("Starting file decryption for file: %1").arg(filePath));
     SECURE_LOG(DEBUG, "EncryptionEngine", QString("Using algorithm: %1, KDF: %2, iterations: %3, HMAC: %4")
                       .arg(algorithm).arg(kdf).arg(iterations).arg(useHMAC ? "Yes" : "No"));
-    
+
     // Validate input file
     QFileInfo fileInfo(filePath);
     if (!fileInfo.exists() || !fileInfo.isFile() || !fileInfo.isReadable()) {
@@ -172,27 +185,32 @@ bool EncryptionEngine::decryptFile(const QString& filePath, const QString& passw
                             .arg(fileInfo.isReadable()));
         return false;
     }
-    
+
     // Verify file extension
     if (!filePath.endsWith(".enc")) {
         SECURE_LOG(WARNING, "EncryptionEngine", QString("File does not have .enc extension: %1").arg(filePath));
     }
-    
+
     QString outputPath = filePath;
     outputPath.chop(4); // Remove ".enc"
-    
+
     bool success = cryptOperation(filePath, outputPath, password, algorithm, false, kdf, iterations, useHMAC, customHeader, keyfilePaths);
-    
+
     if (success) {
         SECURE_LOG(INFO, "EncryptionEngine", QString("File decryption completed successfully: %1").arg(outputPath));
     } else {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("File decryption failed: %1").arg(filePath));
     }
-    
+
     return success;
 }
 
 bool EncryptionEngine::encryptFolder(const QString& folderPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths) {
+    SecureString sp = SecureString::from_qstring(password);
+    return encryptFolder(folderPath, sp, algorithm, kdf, iterations, useHMAC, customHeader, keyfilePaths);
+}
+
+bool EncryptionEngine::encryptFolder(const QString& folderPath, const SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths) {
     SECURE_LOG(INFO, "EncryptionEngine", QString("Starting folder encryption: %1").arg(folderPath));
     
     // Validate folder
@@ -233,6 +251,11 @@ bool EncryptionEngine::encryptFolder(const QString& folderPath, const QString& p
 }
 
 bool EncryptionEngine::decryptFolder(const QString& folderPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths) {
+    SecureString sp = SecureString::from_qstring(password);
+    return decryptFolder(folderPath, sp, algorithm, kdf, iterations, useHMAC, customHeader, keyfilePaths);
+}
+
+bool EncryptionEngine::decryptFolder(const QString& folderPath, const SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths) {
     SECURE_LOG(INFO, "EncryptionEngine", QString("Starting folder decryption: %1").arg(folderPath));
     
     // Check multiple possible encrypted file paths

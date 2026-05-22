@@ -468,7 +468,19 @@ void MainWindow::on_diskEncryptButton_clicked()
         // Set regular disk parameters for standard volume
         worker->setDiskParameters(diskPath, password, algorithm, kdf, iterations, useHMAC, true, keyfilePaths);
     }
-    
+
+    // Worker now holds the password in an mlocked SecureString. Drop our
+    // local QString copies and clear the QLineEdits so Qt's internal
+    // storage for the visible fields is released as quickly as possible.
+    password.fill(QChar('\0'));
+    password.clear();
+    hiddenPassword.fill(QChar('\0'));
+    hiddenPassword.clear();
+    if (ui->diskPasswordLineEdit)        ui->diskPasswordLineEdit->clear();
+    if (ui->diskConfirmPasswordLineEdit) ui->diskConfirmPasswordLineEdit->clear();
+    if (ui->outerPasswordLineEdit)       ui->outerPasswordLineEdit->clear();
+    if (ui->hiddenPasswordLineEdit)      ui->hiddenPasswordLineEdit->clear();
+
     emit worker->process();
 }
 
@@ -596,6 +608,11 @@ void MainWindow::on_diskDecryptButton_clicked()
     
     // Set parameters and start work
     worker->setDiskParameters(diskPath, password, algorithm, kdf, iterations, useHMAC, false, keyfilePaths);
+    // See note in on_diskEncryptButton_clicked — drop the local QString
+    // password and clear the QLineEdit; worker holds the SecureString copy.
+    password.fill(QChar('\0'));
+    password.clear();
+    if (ui->diskPasswordLineEdit) ui->diskPasswordLineEdit->clear();
     emit worker->process();
 }
 

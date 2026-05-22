@@ -6,6 +6,7 @@
 #include <QString>
 #include <QStringList>
 #include "encryptionengine.h"
+#include "secure_string.h"
 
 class EncryptionWorker : public QObject
 {
@@ -41,7 +42,14 @@ signals:
 
 private:
     QString m_path;
-    QString m_password;
+    // SecureString instead of QString: passwords live across signal/slot
+    // boundaries and through encrypt+decrypt operations, so they're our
+    // longest-lived secrets in process memory. SecureString mlocks the buffer
+    // (no swap) and zeros on destruction (no LTO elision). The UI / setter
+    // boundary still accepts QString — there's exactly one short-lived
+    // QString copy (the caller's) that we can't wipe, but the worker's own
+    // copy is protected.
+    SecureString m_password;
     QString m_algorithm;
     QString m_kdf;
     int m_iterations;
@@ -50,7 +58,7 @@ private:
     bool m_isFile;
     bool isDisk;
     bool m_isHiddenVolume;
-    QString m_hiddenPassword;
+    SecureString m_hiddenPassword;
     qint64 m_hiddenVolumeSize;
     QString m_customHeader;
     QStringList m_keyfilePaths;

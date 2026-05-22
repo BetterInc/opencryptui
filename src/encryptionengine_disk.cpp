@@ -1,5 +1,6 @@
 #include "encryptionengine.h"
 #include "encryptionengine_diskops.h"
+#include "secure_string.h"
 #include "logging/secure_logger.h"
 #include <QFile>
 #include <sodium.h>
@@ -13,30 +14,37 @@
 // non-elidable.  Additionally, several early-return paths previously
 // leaked the key — all such paths now wipe before returning.
 
-bool EncryptionEngine::encryptDisk(const QString& diskPath, const QString& password, const QString& algorithm, 
-                                  const QString& kdf, int iterations, bool useHMAC, 
+bool EncryptionEngine::encryptDisk(const QString& diskPath, const QString& password, const QString& algorithm,
+                                  const QString& kdf, int iterations, bool useHMAC,
+                                  const QStringList& keyfilePaths) {
+    SecureString sp = SecureString::from_qstring(password);
+    return encryptDisk(diskPath, sp, algorithm, kdf, iterations, useHMAC, keyfilePaths);
+}
+
+bool EncryptionEngine::encryptDisk(const QString& diskPath, const SecureString& password, const QString& algorithm,
+                                  const QString& kdf, int iterations, bool useHMAC,
                                   const QStringList& keyfilePaths) {
     if (!m_currentProvider) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "No crypto provider selected");
         return false;
     }
-    
+
     // Validate the disk path
     if (!DiskOperations::isValidDiskPath(diskPath)) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Invalid disk path: %1").arg(diskPath));
         return false;
     }
-    
+
     SECURE_LOG(INFO, "EncryptionEngine", QString("Encrypting disk: %1").arg(diskPath));
-    
+
     // Generate a secure salt for key derivation
     QByteArray salt = generateSecureSalt();
-    
+
     // Generate secure IV for encryption
     QByteArray iv = generateSecureIV();
     // Removed lastIv storage for security reasons // Store for later use
-    
-    // Derive the encryption key from the password and keyfiles
+
+    // Derive the encryption key from the password (SecureString) + keyfiles
     QByteArray key = deriveKey(password, salt, keyfilePaths, kdf, iterations);
     
     // Create the encryption header file
@@ -102,8 +110,15 @@ bool EncryptionEngine::encryptDisk(const QString& diskPath, const QString& passw
     return true;
 }
 
-bool EncryptionEngine::decryptDisk(const QString& diskPath, const QString& password, const QString& algorithm, 
-                                  const QString& kdf, int iterations, bool useHMAC, 
+bool EncryptionEngine::decryptDisk(const QString& diskPath, const QString& password, const QString& algorithm,
+                                  const QString& kdf, int iterations, bool useHMAC,
+                                  const QStringList& keyfilePaths) {
+    SecureString sp = SecureString::from_qstring(password);
+    return decryptDisk(diskPath, sp, algorithm, kdf, iterations, useHMAC, keyfilePaths);
+}
+
+bool EncryptionEngine::decryptDisk(const QString& diskPath, const SecureString& password, const QString& algorithm,
+                                  const QString& kdf, int iterations, bool useHMAC,
                                   const QStringList& keyfilePaths) {
     if (!m_currentProvider) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "No crypto provider selected");

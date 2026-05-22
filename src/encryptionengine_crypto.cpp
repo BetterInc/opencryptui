@@ -1,4 +1,5 @@
 #include "encryptionengine.h"
+#include "secure_string.h"
 #include "logging/secure_logger.h"
 #include <QFile>
 #include <QTemporaryFile>
@@ -15,7 +16,7 @@
 // encryptionengine_tables.cpp so this file can focus on cryptOperation
 // and the provider orchestration.
 
-bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &outputPath, const QString &password, const QString &algorithm, bool encrypt, const QString &kdf, int iterations, bool useHMAC, const QString &customHeader, const QStringList &keyfilePaths)
+bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &outputPath, const SecureString &password, const QString &algorithm, bool encrypt, const QString &kdf, int iterations, bool useHMAC, const QString &customHeader, const QStringList &keyfilePaths)
 {
     // Reset the user-facing error so a stale message from a prior failure
     // can't leak into this operation's reporting. Any helper down the stack

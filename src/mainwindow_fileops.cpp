@@ -209,8 +209,21 @@ void MainWindow::startWorker(bool encrypt, bool isFile)
         }
     }
 
-    // Set parameters and start work
+    // Set parameters and start work. After this call the worker holds the
+    // password in an mlocked SecureString — we drop the local QString and
+    // clear the QLineEdit so Qt's internal buffer for the visible field is
+    // also zeroed. The local QString and the QLineEdit's internal QString
+    // are still implicit-shared copies we can't fully reach, but clearing
+    // is the strongest signal we can send Qt to release its grip on those
+    // bytes ASAP.
     worker->setParameters(path, password, algorithm, kdf, iterations, useHMAC, encrypt, isFile, customHeader, keyfilePaths);
+    password.fill(QChar('\0'));
+    password.clear();
+    if (isFile) {
+        ui->filePasswordLineEdit->clear();
+    } else {
+        ui->folderPasswordLineEdit->clear();
+    }
     emit worker->process();
 }
 

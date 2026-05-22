@@ -17,6 +17,7 @@
 // nonce uniqueness within a file is guaranteed by index XOR.
 
 #include "encryptionengine.h"
+#include "secure_string.h"
 #include "logging/secure_logger.h"
 #include <QFile>
 #include <QDataStream>
@@ -763,7 +764,7 @@ bool EncryptionEngine::cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFi
 // On success, writes decrypted plaintext to outputFile.
 // ---------------------------------------------------------------------------
 bool EncryptionEngine::cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFile,
-                                                const QString& password,
+                                                const SecureString& password,
                                                 const QStringList& keyfilePaths,
                                                 const QString& algorithm,
                                                 const QString& kdf,
