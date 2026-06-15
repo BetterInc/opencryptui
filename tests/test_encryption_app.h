@@ -60,6 +60,7 @@ private slots:
     void testTabSwitching();
     void testCryptoProviderSwitching();
     void testTamperDetection();
+    void testContainerCreateOpen();
     void testEntropyQuality();
     void testKeyDerivation();
     

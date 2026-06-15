@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <functional>
 #include <QBuffer>
 #include <QTextStream>
 #include <QStandardItemModel>
@@ -39,6 +40,21 @@ public:
 
     bool prepareToClose();
 
+    // Deniable-container GUI core, factored out of the dialog slots so it can be
+    // tested without driving native file dialogs. createContainerFromFiles reads
+    // the outer (and optional hidden) file into a deniable container;
+    // openContainerToFile decrypts and writes the volume the password unlocks.
+    bool createContainerFromFiles(const QString& containerPath, qint64 sizeMiB,
+                                  const QString& outerFile, const QString& outerPassword,
+                                  const QString& hiddenFile, const QString& hiddenPassword,
+                                  const QString& kdf, int iterations,
+                                  QString* error,
+                                  const std::function<void(int)>& progress = {});
+    // Returns 1 = outer volume extracted, 2 = hidden, 0 = failure (sets *error).
+    int openContainerToFile(const QString& containerPath, const QString& password,
+                            const QString& extractTo, const QString& kdf, int iterations,
+                            QString* error);
+
 private slots:
     void workerFinished(const QString &result, bool success, bool isFile);
     void updateProgress(int value);
@@ -59,6 +75,8 @@ private slots:
     void on_actionAboutKDFs_triggered();
     void on_actionAboutIterations_triggered();
     void on_actionSecurityGuide_triggered();
+    void on_actionCreateContainer_triggered();
+    void on_actionOpenContainer_triggered();
     void on_m_cryptoProviderComboBox_currentIndexChanged(const QString &providerName);
     void showProviderCapabilities();
     void updateBenchmarkTable(int iterations, double mbps, double ms, const QString &algorithm, const QString &kdf);

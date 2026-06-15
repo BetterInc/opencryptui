@@ -1367,6 +1367,9 @@
                 <property name="title">
                     <string>File</string>
                 </property>
+                <addaction name="actionCreateContainer"/>
+                <addaction name="actionOpenContainer"/>
+                <addaction name="separator"/>
                 <addaction name="actionExit"/>
             </widget>
             <widget class="QMenu" name="menuEdit">
@@ -1397,6 +1400,16 @@
         <action name="actionSecurityGuide">
             <property name="text">
                 <string>Security Guide</string>
+            </property>
+        </action>
+        <action name="actionCreateContainer">
+            <property name="text">
+                <string>Create Encrypted Container…</string>
+            </property>
+        </action>
+        <action name="actionOpenContainer">
+            <property name="text">
+                <string>Open Encrypted Container…</string>
             </property>
         </action>
         <action name="actionExit">

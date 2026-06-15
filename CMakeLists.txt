@@ -170,6 +170,7 @@ set(LIBRARY_SOURCES
     src/mainwindow_menu.cpp
     src/mainwindow_preferences.cpp
     src/mainwindow_fileops.cpp
+    src/mainwindow_container.cpp
     include/mainwindow.h
     src/mainwindow_disk.cpp
     src/mainwindow_entropy.cpp
@@ -356,6 +357,7 @@ set(TEST_SOURCES
     tests/test_ui_encrypt_decrypt.cpp
     tests/test_ui_smoke.cpp
     tests/test_ui_tamper.cpp
+    tests/test_ui_container.cpp
     tests/test_ui_common.h
 )
 
