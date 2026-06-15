@@ -137,12 +137,14 @@ int main(int argc, char** argv)
     if (argc < 3) {
         std::fprintf(stderr,
             "Usage: %s <volume-file> <mountpoint> [--kdf Argon2|Scrypt|PBKDF2] [--iter N]\n"
-            "       %s --create <volume-file> --size <MiB> [--kdf ...] [--iter N]\n",
-            argv[0], argv[0]);
+            "       %s --create <volume-file> --size <MiB> [--kdf ...] [--iter N]\n"
+            "       %s --format-device <device> [--kdf ...] [--iter N]   (DESTRUCTIVE)\n",
+            argv[0], argv[0], argv[0]);
         return 2;
     }
 
-    QString kdf = "Argon2"; int iter = 3; bool doCreate = false; qint64 sizeMiB = 0;
+    QString kdf = "Argon2"; int iter = 3; bool doCreate = false, doFormatDev = false;
+    qint64 sizeMiB = 0;
     QString volPath, mountPoint;
     QStringList positional;
     for (int i = 1; i < argc; ++i) {
@@ -150,12 +152,51 @@ int main(int argc, char** argv)
         if (a == "--kdf" && i+1 < argc) kdf = QString::fromUtf8(argv[++i]);
         else if (a == "--iter" && i+1 < argc) iter = QString::fromUtf8(argv[++i]).toInt();
         else if (a == "--create") doCreate = true;
+        else if (a == "--format-device") doFormatDev = true;
         else if (a == "--size" && i+1 < argc) sizeMiB = QString::fromUtf8(argv[++i]).toLongLong();
         else positional << a;
     }
 
     EncryptionEngine eng;
     g_eng = &eng;
+
+    if (doFormatDev) {
+        if (positional.isEmpty()) { std::fprintf(stderr, "--format-device needs a <device>\n"); return 2; }
+        const QString dev = positional.at(0);
+        // Refuse early if obviously unsafe, with a clear reason.
+        const QString blocker = BlockVolume::deviceEraseBlocker(dev);
+        if (!blocker.isEmpty()) { std::fprintf(stderr, "Refusing: %s\n", blocker.toUtf8().constData()); return 1; }
+        const qint64 sz = BlockVolume::deviceSizeBytes(dev);
+        std::fprintf(stderr,
+            "\n*** DESTRUCTIVE: this ERASES EVERYTHING on %s ***\n"
+            "    size: %.1f MiB\n"
+            "Type exactly  ERASE %s  to proceed: ",
+            dev.toUtf8().constData(),
+            sz > 0 ? double(sz)/(1024*1024) : 0.0,
+            dev.toUtf8().constData());
+        std::fflush(stderr);
+        char line[1024] = {0};
+        if (!fgets(line, sizeof(line), stdin)) return 1;
+        QString typed = QString::fromUtf8(line).trimmed();
+        if (typed != QString("ERASE %1").arg(dev)) {
+            std::fprintf(stderr, "Confirmation did not match. Aborted.\n");
+            return 1;
+        }
+        QString p1 = promptPassword("New volume password: ");
+        QString p2 = promptPassword("Confirm password:    ");
+        if (p1 != p2) { std::fprintf(stderr, "Passwords do not match.\n"); return 1; }
+        QString err;
+        int lastPct = -1;
+        bool ok = BlockVolume::formatDeviceWhole(eng, dev, p1, kdf, iter, &err,
+            [&lastPct](int pct){ if (pct != lastPct) { std::fprintf(stderr, "\rFormatting… %d%%", pct); std::fflush(stderr); lastPct = pct; } });
+        std::fprintf(stderr, "\n");
+        if (!ok) { std::fprintf(stderr, "Format failed: %s\n", err.toUtf8().constData()); return 1; }
+        std::fprintf(stderr, "Done. %s is now an encrypted volume. Mount it with:\n"
+                             "  %s %s <mountpoint>\n"
+                             "then put a filesystem on <mountpoint>/disk.img.\n",
+                     dev.toUtf8().constData(), argv[0], dev.toUtf8().constData());
+        return 0;
+    }
 
     if (doCreate) {
         if (positional.isEmpty() || sizeMiB <= 0) {

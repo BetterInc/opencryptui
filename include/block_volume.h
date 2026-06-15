@@ -69,6 +69,39 @@ public:
                        quint32 blockSize, quint64 blockCount, QString* error = nullptr,
                        const ProgressFn& progress = {});
 
+    // Format an EXISTING device/backing of `sizeBytes` bytes as an encrypted
+    // volume (e.g. a whole USB stick). Does NOT truncate or delete the backing;
+    // overwrites every byte with header + encrypted zeros. blockCount is sized
+    // to fill the device. DESTRUCTIVE — caller must confirm + ensure the device
+    // is unmounted and not the system disk.
+    static bool createOnDevice(EncryptionEngine& eng, const QString& devicePath,
+                              const QString& password, const QString& kdf, int iterations,
+                              quint32 blockSize, qint64 sizeBytes, QString* error = nullptr,
+                              const ProgressFn& progress = {});
+
+    // Format an entire device (e.g. a USB stick) as an encrypted volume, with
+    // all the safety checks: refuses on non-Linux (returns a clear "use a
+    // container file" error — Windows/macOS raw-device support is unimplemented),
+    // refuses if the device or any of its partitions is mounted, auto-sizes the
+    // device, then calls createOnDevice. DESTRUCTIVE: the caller must already
+    // have the user's explicit, informed confirmation. blockSize defaults to
+    // DEFAULT_BLOCK_SIZE. A regular sized file is accepted as a stand-in device
+    // (used by tests).
+    static bool formatDeviceWhole(EncryptionEngine& eng, const QString& devicePath,
+                                  const QString& password, const QString& kdf, int iterations,
+                                  QString* error = nullptr, const ProgressFn& progress = {},
+                                  quint32 blockSize = DEFAULT_BLOCK_SIZE);
+
+    // Empty if `path` looks safe to erase; otherwise a human reason (mounted,
+    // unknown size, unsupported OS). Linux-only meaningful; advisory.
+    static QString deviceEraseBlocker(const QString& path);
+
+    // Size in bytes of a path: real block-device size on Linux (BLKGETSIZE64),
+    // else the regular-file size. Returns -1 on failure. (Windows/macOS device
+    // sizing not yet implemented — returns file size, which is 0 for a raw
+    // device there; callers must supply the size explicitly on those OSes.)
+    static qint64 deviceSizeBytes(const QString& path);
+
     // Open an existing volume; the returned Handle carries the data key.
     static Handle open(EncryptionEngine& eng, const QString& path,
                        const QString& password, const QString& kdf, int iterations);
@@ -84,6 +117,13 @@ public:
 
     // Zero + release the in-memory key.
     static void close(Handle& h);
+
+private:
+    // Shared implementation for create() / createOnDevice().
+    static bool createImpl(EncryptionEngine& eng, const QString& path,
+                           const QString& password, const QString& kdf, int iterations,
+                           quint32 blockSize, quint64 blockCount, bool truncate, bool ownsFile,
+                           QString* error, const ProgressFn& progress);
 };
 
 #endif // OPENCRYPTUI_BLOCK_VOLUME_H

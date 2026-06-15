@@ -2,10 +2,17 @@
 #include "encryptionengine.h"
 #include "logging/secure_logger.h"
 #include <QFile>
+#include <QFileInfo>
 #include <openssl/rand.h>
 #include <openssl/evp.h>
 #include <sodium.h>
 #include <cstring>
+#if defined(Q_OS_LINUX)
+#  include <fcntl.h>
+#  include <unistd.h>
+#  include <sys/ioctl.h>
+#  include <linux/fs.h>   // BLKGETSIZE64
+#endif
 
 static const char    BV_MAGIC[8] = {'O','C','U','I','B','L','K','1'};
 static constexpr int BV_HDR_PT   = 8 + 1 + 3 + 4 + 8 + 32; // 56
@@ -58,10 +65,12 @@ static bool gcmDec(const QByteArray& key, const QByteArray& nonce, const QByteAr
     return ok;
 }
 
-bool BlockVolume::create(EncryptionEngine& eng, const QString& path,
-                         const QString& password, const QString& kdf, int iterations,
-                         quint32 blockSize, quint64 blockCount, QString* error,
-                         const ProgressFn& progress)
+// Shared core for create() (new file, truncates) and createOnDevice()
+// (existing device/backing, must NOT truncate or delete on failure).
+bool BlockVolume::createImpl(EncryptionEngine& eng, const QString& path,
+                       const QString& password, const QString& kdf, int iterations,
+                       quint32 blockSize, quint64 blockCount, bool truncate, bool ownsFile,
+                       QString* error, const ProgressFn& progress)
 {
     auto fail=[&](const QString&m){ if(error)*error=m; SECURE_LOG(ERROR_LEVEL,"BlockVolume",m); return false; };
     if (blockSize < 512 || (blockSize % 16) != 0) return fail("Block size must be a multiple of 16 and >= 512.");
@@ -88,15 +97,17 @@ bool BlockVolume::create(EncryptionEngine& eng, const QString& path,
     if (!hok) { sodium_memzero(dataKey.data(),dataKey.size()); return fail("Header encryption failed."); }
 
     QFile f(path);
-    if (!f.open(QIODevice::ReadWrite|QIODevice::Truncate)) { sodium_memzero(dataKey.data(),dataKey.size()); return fail("Cannot open path."); }
-    f.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner);
+    const QIODevice::OpenMode mode = truncate ? (QIODevice::ReadWrite|QIODevice::Truncate)
+                                              : QIODevice::ReadWrite;
+    if (!f.open(mode)) { sodium_memzero(dataKey.data(),dataKey.size()); return fail("Cannot open path."); }
+    if (ownsFile) f.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner);
 
     // Header slot: salt|nonce|ct|tag then random pad to HEADER_SIZE.
     QByteArray header = salt + hnonce + ct + tag;
     QByteArray pad(HEADER_SIZE - header.size(), 0);
     RAND_bytes(reinterpret_cast<unsigned char*>(pad.data()), pad.size());
     if (f.write(header)!=header.size() || f.write(pad)!=pad.size()) {
-        f.close(); QFile::remove(path); sodium_memzero(dataKey.data(),dataKey.size()); return fail("Header write failed.");
+        f.close(); if (ownsFile) QFile::remove(path); sodium_memzero(dataKey.data(),dataKey.size()); return fail("Header write failed.");
     }
 
     // Initialise every block to encrypted zeros (fresh nonce each).
@@ -115,8 +126,37 @@ bool BlockVolume::create(EncryptionEngine& eng, const QString& path,
     }
     sodium_memzero(dataKey.data(),dataKey.size());
     sodium_memzero(h.dataKey.data(), h.dataKey.size());
-    if (!initOk) { QFile::remove(path); return fail("Block initialisation failed."); }
+    if (!initOk) { if (ownsFile) QFile::remove(path); return fail("Block initialisation failed."); }
     return true;
+}
+
+// Public create(): new file backing — truncate + own the file.
+bool BlockVolume::create(EncryptionEngine& eng, const QString& path,
+                         const QString& password, const QString& kdf, int iterations,
+                         quint32 blockSize, quint64 blockCount, QString* error,
+                         const ProgressFn& progress)
+{
+    return createImpl(eng, path, password, kdf, iterations, blockSize, blockCount,
+                      /*truncate=*/true, /*ownsFile=*/true, error, progress);
+}
+
+// Format an EXISTING device/backing of `sizeBytes` as an encrypted volume.
+// Does not truncate or delete the backing. blockCount is sized to fill it.
+// WARNING: this overwrites the entire device — the caller MUST confirm with the
+// user and ensure the device is unmounted and not a system disk.
+bool BlockVolume::createOnDevice(EncryptionEngine& eng, const QString& devicePath,
+                                 const QString& password, const QString& kdf, int iterations,
+                                 quint32 blockSize, qint64 sizeBytes, QString* error,
+                                 const ProgressFn& progress)
+{
+    if (sizeBytes < HEADER_SIZE + onDiskBlockSize(blockSize)) {
+        if (error) *error = "Device too small to hold even one block.";
+        return false;
+    }
+    const quint64 blockCount =
+        quint64((sizeBytes - HEADER_SIZE) / onDiskBlockSize(blockSize));
+    return createImpl(eng, devicePath, password, kdf, iterations, blockSize, blockCount,
+                      /*truncate=*/false, /*ownsFile=*/false, error, progress);
 }
 
 BlockVolume::Handle BlockVolume::open(EncryptionEngine& eng, const QString& path,
@@ -229,6 +269,76 @@ bool BlockVolume::writeRange(const Handle& h, qint64 offset, const QByteArray& d
         pos += chunk; srcPos += chunk;
     }
     return true;
+}
+
+QString BlockVolume::deviceEraseBlocker(const QString& path)
+{
+#if defined(Q_OS_LINUX)
+    // Refuse if the device, or any partition on it, is currently mounted.
+    QFile mounts("/proc/mounts");
+    if (mounts.open(QIODevice::ReadOnly)) {
+        const QList<QByteArray> lines = mounts.readAll().split('\n');
+        mounts.close();
+        for (const QByteArray& line : lines) {
+            const QList<QByteArray> f = line.simplified().split(' ');
+            if (f.size() < 2) continue;
+            const QString src = QString::fromLocal8Bit(f[0]);
+            const QString mnt = QString::fromLocal8Bit(f[1]);
+            // /dev/sdb matches /dev/sdb and /dev/sdb1, /dev/sdb2, …
+            if (src == path || (src.startsWith(path) && path.startsWith("/dev/"))) {
+                return QString("%1 is mounted at %2 — unmount it first (it must not be in use).")
+                    .arg(src, mnt);
+            }
+        }
+    }
+    return QString(); // looks safe
+#else
+    Q_UNUSED(path);
+    return QString("Raw whole-device encryption is not supported on this OS yet.");
+#endif
+}
+
+bool BlockVolume::formatDeviceWhole(EncryptionEngine& eng, const QString& devicePath,
+                                    const QString& password, const QString& kdf, int iterations,
+                                    QString* error, const ProgressFn& progress, quint32 blockSize)
+{
+    auto fail=[&](const QString&m){ if(error)*error=m; SECURE_LOG(ERROR_LEVEL,"BlockVolume",m); return false; };
+#if !defined(Q_OS_LINUX)
+    Q_UNUSED(eng); Q_UNUSED(devicePath); Q_UNUSED(password); Q_UNUSED(kdf);
+    Q_UNUSED(iterations); Q_UNUSED(progress); Q_UNUSED(blockSize);
+    return fail("Raw whole-device encryption is only supported on Linux right now. "
+                "Use an encrypted container file instead — it works on Windows, macOS "
+                "and Linux with no admin rights.");
+#else
+    const QString blocker = deviceEraseBlocker(devicePath);
+    if (!blocker.isEmpty()) return fail(blocker);
+    const qint64 size = deviceSizeBytes(devicePath);
+    if (size <= 0) return fail("Could not determine the device size (need a real block "
+                               "device or a pre-sized file).");
+    return createOnDevice(eng, devicePath, password, kdf, iterations, blockSize, size,
+                          error, progress);
+#endif
+}
+
+qint64 BlockVolume::deviceSizeBytes(const QString& path)
+{
+#if defined(Q_OS_LINUX)
+    // Raw block devices report size 0 via stat; query the kernel directly.
+    QFileInfo fi(path);
+    if (path.startsWith("/dev/")) {
+        int fd = ::open(path.toLocal8Bit().constData(), O_RDONLY | O_CLOEXEC);
+        if (fd >= 0) {
+            quint64 sz = 0;
+            int rc = ::ioctl(fd, BLKGETSIZE64, &sz);
+            ::close(fd);
+            if (rc == 0 && sz > 0) return qint64(sz);
+        }
+        return -1; // a /dev path we couldn't size
+    }
+    (void)fi;
+#endif
+    QFileInfo info(path);
+    return info.exists() ? info.size() : -1;
 }
 
 void BlockVolume::close(Handle& h)

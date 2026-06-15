@@ -110,5 +110,33 @@ fi
 grep -qi "Open failed" "$WORK/mnt.log" || true
 echo "PASS: wrong password rejected (no mount)"
 
+# --- 6. Whole-device format on a file-as-device, then mount it --------------
+DEVFILE="$WORK/fakedev.img"
+truncate -s 8M "$DEVFILE"
+printf 'ERASE %s\n%s\n%s\n' "$DEVFILE" "$PASS" "$PASS" \
+    | "$MOUNT_BIN" --format-device "$DEVFILE" --iter 3 >"$WORK/fmt.log" 2>&1
+grep -qi "now an encrypted volume" "$WORK/fmt.log" || fail "format-device did not complete ($(tail -2 "$WORK/fmt.log"))"
+echo "PASS: --format-device formatted the (file) device"
+
+VOL="$DEVFILE"   # mount the formatted device file
+if ! mount_vol "$PASS"; then fail "mounting formatted device failed ($(cat "$WORK/mnt.log"))"; fi
+DEVSECRET="WHOLE-DEVICE-OTFE-$$"
+printf '%s' "$DEVSECRET" | dd of="$MNT/disk.img" bs=1 seek=8192 conv=notrunc status=none || fail "write to formatted device failed"
+sync
+GOT3="$(dd if="$MNT/disk.img" bs=1 skip=8192 count=${#DEVSECRET} status=none)"
+[ "$GOT3" = "$DEVSECRET" ] && echo "PASS: read/write through formatted-device mount" || fail "formatted-device readback mismatch"
+grep -a -q "$DEVSECRET" "$DEVFILE" && fail "plaintext leaked onto formatted device" || echo "PASS: no plaintext on formatted device"
+unmount_vol
+
+# --- 7. format-device refuses a mounted device (no write) -------------------
+MOUNTED_DEV="$(grep -oE '^/dev/[a-z0-9/_-]+' /proc/mounts | head -1)"
+if [ -n "$MOUNTED_DEV" ]; then
+    OUT="$(printf '\n' | "$MOUNT_BIN" --format-device "$MOUNTED_DEV" 2>&1 | head -1)"
+    case "$OUT" in
+        Refusing:*) echo "PASS: refuses a mounted device ($MOUNTED_DEV)";;
+        *) fail "did not refuse mounted device: $OUT";;
+    esac
+fi
+
 echo "ALL FUSE E2E TESTS PASSED"
 exit 0

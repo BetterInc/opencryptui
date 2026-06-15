@@ -122,6 +122,58 @@ int main(int argc, char** argv)
         check(!bad.ok, "wrong password rejected");
     }
 
+    // ---- createOnDevice: format a pre-sized backing (stands in for a USB) ----
+    {
+        const QString devPath = dir.filePath("fakedev.img");
+        const qint64 devSize = 4 * 1024 * 1024; // 4 MiB "device"
+        { QFile f(devPath); f.open(QIODevice::WriteOnly); f.resize(devSize); f.close(); }
+
+        QString derr;
+        bool dok = BlockVolume::createOnDevice(eng, devPath, "device-pw", kdf, iters,
+                                               BS, devSize, &derr);
+        check(dok, ("createOnDevice formats the backing" + (dok?QString():": "+derr)).toUtf8().constData());
+        // Backing file size must be unchanged (no truncate/grow on a device).
+        check(QFileInfo(devPath).size() == devSize, "createOnDevice did not resize the backing");
+
+        auto dh = BlockVolume::open(eng, devPath, "device-pw", kdf, iters);
+        check(dh.ok, "device volume opens");
+        check(dh.blockCount == quint64((devSize - BlockVolume::HEADER_SIZE)
+                                       / BlockVolume::onDiskBlockSize(BS)),
+              "device blockCount fills the backing");
+        check(BlockVolume::readBlock(dh, 0) == QByteArray(BS, 0), "device fresh block reads zeros");
+        QByteArray d = rngData(BS, 0xEE);
+        check(BlockVolume::writeBlock(dh, 1, d), "device write block");
+        check(BlockVolume::readBlock(dh, 1) == d, "device block round-trips");
+        BlockVolume::close(dh);
+
+        // deviceSizeBytes on a regular file returns its size.
+        check(BlockVolume::deviceSizeBytes(devPath) == devSize, "deviceSizeBytes(file) == file size");
+    }
+
+    // ---- formatDeviceWhole on a file-as-device (auto-sizes, safety-guards) ----
+    {
+        const QString devPath = dir.filePath("fmtwhole.img");
+        const qint64 devSize = 4 * 1024 * 1024;
+        { QFile f(devPath); f.open(QIODevice::WriteOnly); f.resize(devSize); f.close(); }
+
+        // A plain file is not in /proc/mounts → not blocked.
+        check(BlockVolume::deviceEraseBlocker(devPath).isEmpty(), "unmounted file not blocked");
+
+        QString ferr;
+        bool fok = BlockVolume::formatDeviceWhole(eng, devPath, "fmt-pw", kdf, iters, &ferr);
+#if defined(Q_OS_LINUX)
+        check(fok, ("formatDeviceWhole (Linux)" + (fok?QString():": "+ferr)).toUtf8().constData());
+        auto fh = BlockVolume::open(eng, devPath, "fmt-pw", kdf, iters);
+        check(fh.ok, "formatted-whole device opens");
+        check(BlockVolume::readBlock(fh, 0) == QByteArray(BS, 0), "formatted-whole reads zeros");
+        BlockVolume::close(fh);
+#else
+        // Non-Linux: must refuse with a clear message, not do anything unsafe.
+        check(!fok, "formatDeviceWhole refused on non-Linux");
+        check(ferr.contains("container"), "non-Linux error points to container-file model");
+#endif
+    }
+
     if (s_failures) { std::fprintf(stderr, "TOTAL FAILURES: %d\n", s_failures); return 1; }
     std::fprintf(stderr, "ALL BLOCK-VOLUME TESTS PASSED\n");
     return 0;
