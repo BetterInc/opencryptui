@@ -148,8 +148,11 @@ int main(int argc, char** argv)
     // ---- 4. No plaintext markers on disk ----
     {
         QByteArray b = readAll(c2);
+        // Scan for THIS format's real 8-byte magic "OCUIVOL1" (chance collision
+        // ~2^-64, negligible). NOT a bare 4-byte "OCUI" — that's a different
+        // format's marker and would collide ~0.2% of runs in 8 MiB of random
+        // data (a false-positive flake, not a real leak).
         check(findSeq(b, "OCUIVOL1", 8) == -1, "no 'OCUIVOL1' magic in plaintext on disk");
-        check(findSeq(b, "OCUI", 4) == -1, "no 'OCUI' marker on disk");
         check(findSeq(b, "hidden", 6) == -1, "no 'hidden' string on disk");
     }
 

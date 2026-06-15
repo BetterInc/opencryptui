@@ -38,18 +38,26 @@ qint64 DeniableContainer::minSize(qint64 outerLen, qint64 hiddenLen)
     return DATA_OFF + chunkedSize(outerLen) + chunkedSize(hiddenLen);
 }
 
-// Fill [offset, offset+len) of an open file with CSPRNG random bytes.
-static bool fillRandom(QFile& f, qint64 offset, qint64 len)
+// Fill [offset, offset+len) of an open file with CSPRNG random bytes,
+// reporting whole-percent progress if a sink is provided.
+static bool fillRandom(QFile& f, qint64 offset, qint64 len,
+                       const DeniableContainer::ProgressFn& progress = {})
 {
     if (!f.seek(offset)) return false;
     QByteArray block(1 << 20, 0);
     qint64 remaining = len;
+    int lastPct = -1;
+    if (progress) progress(0);
     while (remaining > 0) {
         const int n = static_cast<int>(qMin<qint64>(remaining, block.size()));
         if (RAND_bytes(reinterpret_cast<unsigned char*>(block.data()), n) != 1)
             return false;
         if (f.write(block.constData(), n) != n) return false;
         remaining -= n;
+        if (progress && len > 0) {
+            const int pct = int((len - remaining) * 100 / len);
+            if (pct != lastPct) { progress(pct); lastPct = pct; }
+        }
     }
     return true;
 }
@@ -207,7 +215,7 @@ bool DeniableContainer::create(EncryptionEngine& eng,
                                const QString& outerPassword, const QByteArray& outerData,
                                const QString& kdf, int iterations,
                                const QString& hiddenPassword, const QByteArray& hiddenData,
-                               QString* error)
+                               QString* error, const ProgressFn& progress)
 {
     auto fail = [&](const QString& m) { if (error) *error = m; SECURE_LOG(ERROR_LEVEL, "DeniableContainer", m); return false; };
 
@@ -233,7 +241,7 @@ bool DeniableContainer::create(EncryptionEngine& eng,
     // 1) Fill the ENTIRE file with CSPRNG random. This is what makes the
     //    (absent) hidden header and all free space indistinguishable from real
     //    encrypted data.
-    if (!fillRandom(f, 0, sizeBytes)) { f.close(); QFile::remove(path); return fail("Random fill failed."); }
+    if (!fillRandom(f, 0, sizeBytes, progress)) { f.close(); QFile::remove(path); return fail("Random fill failed."); }
 
     // 2) Outer header + data.
     QByteArray outerKey(32, 0), outerNonce(NONCE_LEN, 0);

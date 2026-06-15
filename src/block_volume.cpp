@@ -60,7 +60,8 @@ static bool gcmDec(const QByteArray& key, const QByteArray& nonce, const QByteAr
 
 bool BlockVolume::create(EncryptionEngine& eng, const QString& path,
                          const QString& password, const QString& kdf, int iterations,
-                         quint32 blockSize, quint64 blockCount, QString* error)
+                         quint32 blockSize, quint64 blockCount, QString* error,
+                         const ProgressFn& progress)
 {
     auto fail=[&](const QString&m){ if(error)*error=m; SECURE_LOG(ERROR_LEVEL,"BlockVolume",m); return false; };
     if (blockSize < 512 || (blockSize % 16) != 0) return fail("Block size must be a multiple of 16 and >= 512.");
@@ -103,7 +104,15 @@ bool BlockVolume::create(EncryptionEngine& eng, const QString& path,
     Handle h; h.ok=true; h.path=path; h.blockSize=blockSize; h.blockCount=blockCount; h.dataKey=dataKey;
     f.close();
     bool initOk = true;
-    for (quint64 i=0;i<blockCount && initOk;++i) initOk = writeBlock(h, i, zeros);
+    int lastPct = -1;
+    if (progress) progress(0);
+    for (quint64 i=0;i<blockCount && initOk;++i) {
+        initOk = writeBlock(h, i, zeros);
+        if (progress) {
+            const int pct = int((i + 1) * 100 / blockCount);
+            if (pct != lastPct) { progress(pct); lastPct = pct; } // whole-percent only
+        }
+    }
     sodium_memzero(dataKey.data(),dataKey.size());
     sodium_memzero(h.dataKey.data(), h.dataKey.size());
     if (!initOk) { QFile::remove(path); return fail("Block initialisation failed."); }

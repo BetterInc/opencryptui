@@ -34,6 +34,7 @@
 
 #include <QString>
 #include <QByteArray>
+#include <functional>
 
 class EncryptionEngine;
 
@@ -64,13 +65,18 @@ public:
     // first, so unused space and the (absent) hidden header are indistinguishable
     // from real encrypted data. Pass an empty hiddenPassword for outer-only.
     // Returns false and sets *error on failure.
+    // Optional progress sink (0..100), reported during the random-fill phase
+    // (the slow part) so a large container, e.g. on a USB, shows live percent.
+    using ProgressFn = std::function<void(int)>;
+
     static bool create(EncryptionEngine& eng,
                        const QString& path, qint64 sizeBytes,
                        const QString& outerPassword, const QByteArray& outerData,
                        const QString& kdf, int iterations,
                        const QString& hiddenPassword = QString(),
                        const QByteArray& hiddenData = QByteArray(),
-                       QString* error = nullptr);
+                       QString* error = nullptr,
+                       const ProgressFn& progress = {});
 
     // Open with a password. Which volume you get is determined solely by which
     // header slot the password validates — the outer password yields the outer

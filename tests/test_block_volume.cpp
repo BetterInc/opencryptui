@@ -46,9 +46,15 @@ int main(int argc, char** argv)
     const quint32 BS = 4096;
     const quint64 NB = 64; // 256 KiB volume
 
+    // Progress callback must fire monotonically and reach 100.
     QString err;
-    bool ok = BlockVolume::create(eng, path, pw, kdf, iters, BS, NB, &err);
+    int lastPct = -1; bool monotonic = true; bool reached100 = false; int calls = 0;
+    bool ok = BlockVolume::create(eng, path, pw, kdf, iters, BS, NB, &err,
+        [&](int pct){ ++calls; if (pct < lastPct) monotonic=false; lastPct=pct; if (pct==100) reached100=true; });
     check(ok, ("create" + (ok ? QString() : ": " + err)).toUtf8().constData());
+    check(calls > 0, "progress callback was invoked");
+    check(monotonic, "progress is monotonic (never goes backward)");
+    check(reached100, "progress reaches 100%");
 
     auto h = BlockVolume::open(eng, path, pw, kdf, iters);
     check(h.ok, ("open" + (h.ok ? QString() : ": " + h.error)).toUtf8().constData());

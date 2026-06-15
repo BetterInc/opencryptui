@@ -23,6 +23,7 @@
 
 #include <QString>
 #include <QByteArray>
+#include <functional>
 
 class EncryptionEngine;
 
@@ -56,11 +57,17 @@ public:
         return qint64(h.blockCount) * h.blockSize;
     }
 
+    // Optional progress sink: called with 0..100 as the volume is initialised.
+    // Useful when creating a large container (e.g. on a USB) so the UI can show
+    // a live percentage. Invoked only on whole-percent changes.
+    using ProgressFn = std::function<void(int)>;
+
     // Create a new volume (initialised to encrypted zeros). Returns false +
-    // sets *error on failure.
+    // sets *error on failure. `progress` may be empty.
     static bool create(EncryptionEngine& eng, const QString& path,
                        const QString& password, const QString& kdf, int iterations,
-                       quint32 blockSize, quint64 blockCount, QString* error = nullptr);
+                       quint32 blockSize, quint64 blockCount, QString* error = nullptr,
+                       const ProgressFn& progress = {});
 
     // Open an existing volume; the returned Handle carries the data key.
     static Handle open(EncryptionEngine& eng, const QString& path,
