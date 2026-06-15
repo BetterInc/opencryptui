@@ -234,8 +234,8 @@ private:
     // ciphers, each with an independent subkey, so breaking the file requires
     // breaking every cipher in the chain. The specific recipe lives in the v4
     // inner header's reserved byte (a cascade id); this single algId marks
-    // "this is a cascade". Inspired by VeraCrypt's AES-Twofish-Serpent, but
-    // built from the AEAD primitives we already trust (AES-GCM + ChaCha20).
+    // "this is a cascade". Built from the AEAD primitives we already trust
+    // (AES-256-GCM + ChaCha20-Poly1305, different design families).
     static constexpr quint8 ALG_ID_CASCADE            = 0xC0;
     static constexpr quint8 ALG_ID_UNKNOWN            = 0xFF;
 

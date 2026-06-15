@@ -23,7 +23,7 @@ OpenCryptUI is a Qt-based graphical user interface application for file and fold
 - GUI-based folder compression and encryption using `.tar.gz` wrapping.
 - Multi-provider backend: OpenSSL, libsodium, and Argon2 are all supported and switchable at runtime.
 
-### Advanced (VeraCrypt-parity) features
+### Advanced features
 
 - **Cipher cascades** — encrypt through multiple AEAD ciphers in sequence
   (AES-256-GCM + ChaCha20-Poly1305, and a triple variant), each with an
@@ -162,4 +162,4 @@ OpenCryptUI aims to implement several additional features found in expert-level 
 Implemented since the original roadmap: cipher cascades, deniable containers
 with **hidden volumes** (real plausible deniability, not the old cleartext-flag
 scaffold), on-the-fly mountable volumes (FUSE), and Linux whole-device
-encryption. See [Advanced features](#advanced-veracrypt-parity-features).
+encryption. See [Advanced features](#advanced-features).

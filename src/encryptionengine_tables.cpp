@@ -23,12 +23,12 @@
 
 // ---- Cipher cascades --------------------------------------------------------
 // A cascade encrypts each chunk through several AEAD ciphers in sequence, each
-// with an independent subkey. OpenSSL doesn't ship Twofish/Serpent, so instead
-// of VeraCrypt's exact AES-Twofish-Serpent we chain the two strongest AEAD
-// primitives we already trust — AES-256-GCM (a block cipher) and
-// ChaCha20-Poly1305 (a stream cipher from a different design family). Breaking
-// the file then requires breaking BOTH. The cascade id is stored in the v4
-// inner header's reserved byte so decrypt knows the exact recipe.
+// with an independent subkey, so the file is only broken if EVERY cipher is.
+// We chain the two strongest AEAD primitives we already trust — AES-256-GCM
+// (a block cipher) and ChaCha20-Poly1305 (a stream cipher from a different
+// design family), so an advance against one design family doesn't sink both.
+// The cascade id is stored in the v4 inner header's reserved byte so decrypt
+// knows the exact recipe.
 /*static*/ QStringList EncryptionEngine::cascadeRecipe(quint8 cascadeId)
 {
     switch (cascadeId) {
