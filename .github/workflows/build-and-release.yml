@@ -50,7 +50,7 @@ jobs:
           echo -e "[Logging]\r\ndefault.debug=false\r\ndefault.warning=false" > "$APPDATA/QtProject/qtlogging.ini"
 
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up CMake
         if: matrix.os != 'windows-latest'
@@ -431,7 +431,7 @@ jobs:
     if: ${{ ! inputs.skip_sanitize }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -491,7 +491,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Clang + dependencies
         run: |
@@ -584,7 +584,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Download Linux build artifacts
         uses: actions/download-artifact@v4
