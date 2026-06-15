@@ -336,43 +336,38 @@ void MainWindow::updateSecurityStatus(const QString &path, QLabel *statusLabel)
     QString statusText;
     QString styleSheet = "font-weight: bold; padding: 5px; border-radius: 3px;";
     
-    // Check if in standard temp directory
+    // We deliberately do NOT flag "readable by others". With the default umask
+    // (022) almost every file is created 0644, so world-readable is the NORMAL
+    // state — flagging it as INSECURE is pure noise (alarm fatigue), and for an
+    // encrypted .enc file it's irrelevant anyway (it's ciphertext). The engine
+    // already writes its own outputs 0600. The real risks are: a shared/temp
+    // location, or a file/directory that OTHERS CAN WRITE (tamper or replace
+    // your file) — those we surface.
     if (path.startsWith("/tmp/") || path.startsWith(QDir::tempPath())) {
         isSecure = false;
-        statusText = "⚠️ INSECURE: File in temporary directory";
+        statusText = "⚠️ Shared/temp location — others may be able to read or replace files here";
     }
-    
-    // Check if in user's home directory with proper permissions
     else if (fileInfo.exists()) {
-        QFile file(path);
-        QFileDevice::Permissions perms = file.permissions();
-        
-        // Check if world-readable
-        if (perms & QFileDevice::ReadOther) {
+        const QFileDevice::Permissions perms = QFile(path).permissions();
+        const QFileDevice::Permissions dirPerms =
+            QFile(fileInfo.absolutePath()).permissions();
+
+        if (perms & QFileDevice::WriteOther) {
+            // Anyone can overwrite the file → tamper / swap-in risk.
             isSecure = false;
-            statusText = "⚠️ INSECURE: File readable by others";
+            statusText = "⚠️ INSECURE: this file is writable by other users (tamper risk)";
         }
-        
-        // Check if world-writable
-        else if (perms & QFileDevice::WriteOther) {
+        else if (dirPerms & QFileDevice::WriteOther) {
+            // Anyone can delete/replace files in the directory, even if the
+            // file's own bits look fine.
             isSecure = false;
-            statusText = "⚠️ INSECURE: File writable by others";
-        }
-        
-        // Check if in a world-readable directory
-        else {
-            QString parentDir = fileInfo.absolutePath();
-            QFileInfo dirInfo(parentDir);
-            if (QFile(parentDir).permissions() & QFileDevice::ReadOther) {
-                isSecure = false;
-                statusText = "⚠️ WARNING: Parent directory accessible by others";
-            }
+            statusText = "⚠️ INSECURE: the containing folder is writable by other users (they could replace this file)";
         }
     }
-    
+
     // Default secure status
     if (isSecure) {
-        statusText = "✅ SECURE: Location has proper permissions";
+        statusText = "✅ Location looks fine (not world-writable, not a shared temp dir)";
         styleSheet += "background-color: #d4edda; color: #155724;";
     } else {
         styleSheet += "background-color: #f8d7da; color: #721c24;";
