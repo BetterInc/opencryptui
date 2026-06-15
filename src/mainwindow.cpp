@@ -20,6 +20,7 @@
 #include <QProgressBar>
 #include <QLabel>
 #include <QCheckBox>
+#include <QColor>
 #include "encryptionengine.h"
 #include <QDirIterator>
 #include <QProcess>
@@ -65,14 +66,71 @@ MainWindow::MainWindow(QWidget *parent)
 
     workerThread.start();
 
-    // Initialize the benchmark table
-    ui->benchmarkTable->setColumnCount(5);
-    QStringList headers = {"Iterations", "MB/s", "ms", "Cipher", "KDF"};
+    // Initialize the benchmark table.
+    // Column order reflects the tool's priorities: SECURITY first, then which
+    // primitives, then speed last. Speed is a tiebreaker, never the headline —
+    // and for KDFs a faster result is actively worse (lower attacker cost).
+    ui->benchmarkTable->setColumnCount(6);
+    QStringList headers = {"Security", "Cipher", "KDF", "MB/s", "ms", "Iterations"};
     ui->benchmarkTable->setHorizontalHeaderLabels(headers);
     ui->benchmarkTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(0)) {
+        hdr->setToolTip(
+            "Security tier (weakest link of cipher + KDF). This tool ranks by "
+            "security, not speed:\n"
+            "  • Cipher: AEAD 256-bit (AES-256-GCM, ChaCha20-Poly1305) is "
+            "strongest; unauthenticated modes (CTR/CBC) and smaller keys rank "
+            "lower; Camellia lowest.\n"
+            "  • KDF: Argon2id (memory-hard) > Scrypt (memory-hard) > PBKDF2.\n"
+            "Speed only breaks ties between equally-secure rows. For a KDF a "
+            "HIGHER ms means a stronger work factor.");
+    }
 
-    // Enable sorting
+    // Enable sorting, then default to Security descending so the strongest
+    // configuration sits at the top.
     ui->benchmarkTable->setSortingEnabled(true);
+    ui->benchmarkTable->sortByColumn(0, Qt::DescendingOrder);
+}
+
+MainWindow::SecurityRating MainWindow::securityRatingFor(const QString &cipher, const QString &kdf)
+{
+    // Cipher tier — AEAD + key size + cipher maturity.
+    //   3: 256-bit AEAD (authenticated, full key) — AES-256-GCM, ChaCha20-Poly1305
+    //   2: smaller-key AEAD, OR 256-bit unauthenticated mode (relies on our
+    //      Ed25519 tamper-evidence layer, not the cipher itself)
+    //   1: smaller-key unauthenticated, or Camellia (far less cryptanalysis)
+    int cipherTier;
+    const bool isAead = cipher.contains("GCM") || cipher.compare("ChaCha20-Poly1305", Qt::CaseInsensitive) == 0;
+    const bool is256  = cipher.contains("256") || cipher.compare("ChaCha20-Poly1305", Qt::CaseInsensitive) == 0;
+    const bool isCamellia = cipher.startsWith("Camellia", Qt::CaseInsensitive);
+
+    if (isCamellia) {
+        cipherTier = 1;
+    } else if (isAead && is256) {
+        cipherTier = 3;
+    } else if (isAead || is256) {
+        cipherTier = 2;
+    } else {
+        cipherTier = 1;
+    }
+
+    // KDF tier — memory-hardness is what matters; speed is irrelevant here.
+    int kdfTier;
+    if (kdf.compare("Argon2", Qt::CaseInsensitive) == 0)      kdfTier = 3;
+    else if (kdf.compare("Scrypt", Qt::CaseInsensitive) == 0) kdfTier = 2;
+    else                                                       kdfTier = 1; // PBKDF2 / unknown
+
+    // Weakest link: a strong cipher with a weak KDF is only as safe as the KDF.
+    const int tier = qMin(cipherTier, kdfTier);
+
+    QString label;
+    QString stars;
+    switch (tier) {
+        case 3: label = "Strong"; stars = QString::fromUtf8("★★★"); break;
+        case 2: label = "Good";   stars = QString::fromUtf8("★★☆"); break;
+        default: label = "Weak";  stars = QString::fromUtf8("★☆☆"); break;
+    }
+    return { tier, label, stars };
 }
 
 void MainWindow::setupUI()
@@ -448,6 +506,23 @@ void MainWindow::messageHandler(QtMsgType type, const QMessageLogContext &contex
     }
 }
 
+namespace {
+// QTableWidgetItem aliases Qt::EditRole onto Qt::DisplayRole — setData(EditRole,
+// number) clobbers the visible text (that's the "3e+06" bug). So a hidden
+// numeric sort key has to live in Qt::UserRole, which is NOT aliased, and we
+// sort on it via a custom operator<. DisplayRole keeps the human-facing text.
+class SortKeyItem : public QTableWidgetItem {
+public:
+    SortKeyItem(const QString& displayText, double sortKey) {
+        setData(Qt::DisplayRole, displayText);
+        setData(Qt::UserRole, sortKey);
+    }
+    bool operator<(const QTableWidgetItem& other) const override {
+        return data(Qt::UserRole).toDouble() < other.data(Qt::UserRole).toDouble();
+    }
+};
+} // namespace
+
 void MainWindow::updateBenchmarkTable(int iterations, double mbps, double ms, const QString &cipher, const QString &kdf)
 {
     SECURE_LOG(DEBUG, "MainWindow", QString("Update Benchmark Table: iterations=%1, mbps=%2, ms=%3, cipher=%4, kdf=%5")
@@ -462,26 +537,35 @@ void MainWindow::updateBenchmarkTable(int iterations, double mbps, double ms, co
     int row = ui->benchmarkTable->rowCount();
     ui->benchmarkTable->insertRow(row);
 
-    auto numericItem = [](double v, char fmt = 'f', int prec = 2) {
-        auto* it = new QTableWidgetItem();
-        it->setData(Qt::DisplayRole, QString::number(v, fmt, prec));
-        it->setData(Qt::EditRole, v); // sort numerically, not lexicographically
-        return it;
-    };
-    auto intItem = [](int v) {
-        auto* it = new QTableWidgetItem();
-        it->setData(Qt::DisplayRole, QString::number(v));
-        it->setData(Qt::EditRole, v);
-        return it;
-    };
+    const SecurityRating rating = securityRatingFor(cipher, kdf);
 
-    ui->benchmarkTable->setItem(row, 0, intItem(iterations));
-    ui->benchmarkTable->setItem(row, 1, numericItem(mbps));
-    ui->benchmarkTable->setItem(row, 2, numericItem(ms));
-    ui->benchmarkTable->setItem(row, 3, new QTableWidgetItem(cipher));
-    ui->benchmarkTable->setItem(row, 4, new QTableWidgetItem(kdf));
+    // Security cell. DisplayRole shows "★★★ Strong"; the sort key in UserRole
+    // is composite (tier major, throughput minor) so sorting the Security
+    // column — the default — orders by security tier first and uses MB/s only
+    // to break ties between equally-secure rows. Speed never outranks security.
+    auto* secItem = new SortKeyItem(QString("%1 %2").arg(rating.stars, rating.label),
+                                    rating.tier * 1000000.0 + mbps);
+    secItem->setToolTip(QString("Tier %1 of 3 — %2. Speed is only a tiebreaker; "
+                                "for KDFs a higher ms is a stronger work factor.")
+                            .arg(rating.tier).arg(rating.label));
+    // Colour-code at a glance: green = strong, amber = good, red = weak.
+    QColor tierColor = (rating.tier == 3) ? QColor(0x1b, 0x8a, 0x3a)
+                     : (rating.tier == 2) ? QColor(0xb8, 0x7d, 0x00)
+                                          : QColor(0xc0, 0x39, 0x2b);
+    secItem->setForeground(tierColor);
+
+    ui->benchmarkTable->setItem(row, 0, secItem);
+    ui->benchmarkTable->setItem(row, 1, new QTableWidgetItem(cipher));
+    ui->benchmarkTable->setItem(row, 2, new QTableWidgetItem(kdf));
+    ui->benchmarkTable->setItem(row, 3, new SortKeyItem(QString::number(mbps, 'f', 2), mbps));
+    ui->benchmarkTable->setItem(row, 4, new SortKeyItem(QString::number(ms, 'f', 2), ms));
+    ui->benchmarkTable->setItem(row, 5, new SortKeyItem(QString::number(iterations), iterations));
 
     ui->benchmarkTable->setSortingEnabled(wasSorting);
+    // Keep the strongest configuration pinned to the top after each new row.
+    if (wasSorting) {
+        ui->benchmarkTable->sortByColumn(0, Qt::DescendingOrder);
+    }
 }
 
 void MainWindow::safeConnect(const QObject *sender, const char *signal, const QObject *receiver, const char *method)

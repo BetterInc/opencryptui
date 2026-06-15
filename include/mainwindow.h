@@ -80,6 +80,15 @@ private:
     // minimum. The corresponding tooltip is updated too.
     void applyKdfIterationFloor(const QString &kdf, class QSpinBox *spinBox);
 
+    // Security rating for a (cipher, KDF) pair, used by the benchmark tab.
+    // This tool ranks by SECURITY first — speed is only a tiebreaker among
+    // equally-secure options, and for KDFs faster is actively worse (lower
+    // attacker work factor). tier is 1..3 (3 = strongest), computed as the
+    // weakest-link min of the cipher tier and the KDF tier. label is a
+    // human string ("Strong" / "Good" / "Weak") with a ★ rendering.
+    struct SecurityRating { int tier; QString label; QString stars; };
+    static SecurityRating securityRatingFor(const QString &cipher, const QString &kdf);
+
 private:
     Ui::MainWindow *ui;
     EncryptionEngine encryptionEngine;
