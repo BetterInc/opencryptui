@@ -43,12 +43,21 @@ void MainWindow::on_actionAbout_triggered()
 void MainWindow::on_actionAboutCiphers_triggered()
 {
     QString aboutCiphersText = QString(
-        "Top Ciphers for File Encryption:\n\n"
-        "AES-256-GCM: Provides strong encryption with built-in data integrity and authentication. Highly recommended for file encryption due to its security and performance.\n\n"
-        "ChaCha20-Poly1305: A secure cipher that is resistant to timing attacks. It is highly efficient on both software and hardware, and is suitable for environments where performance is critical.\n\n"
-        "AES-256-CTR: A strong encryption mode suitable for stream encryption. It does not provide data integrity or authentication by itself, so it should be used with additional integrity checks.\n\n"
-        "AES-256-CBC: A widely used encryption mode that provides strong encryption but does not include data integrity or authentication. It is suitable for file encryption but should be combined with a message authentication code (MAC) to ensure data integrity.\n\n"
-        "Recommendation: For maximum security in file encryption, use AES-256-GCM or ChaCha20-Poly1305, as they provide both strong encryption and built-in data integrity and authentication.");
+        "Ciphers Available for Encryption:\n\n"
+        "AES-256-GCM (AEAD): strong encryption with built-in authentication — any "
+        "tampering is detected. Hardware-accelerated (AES-NI) on most CPUs. A top choice.\n\n"
+        "ChaCha20-Poly1305 (AEAD): also authenticated, resistant to timing attacks, and "
+        "fast in software — the best pick on devices without AES-NI (e.g. older phones).\n\n"
+        "Cipher cascades (e.g. AES-256-GCM + ChaCha20-Poly1305): encrypt through several "
+        "AEAD ciphers in sequence, each with an independent key. The file is only broken "
+        "if EVERY cipher in the chain is broken — for your highest-value data. Chosen from "
+        "the algorithm list like any other option.\n\n"
+        "AES-256-CTR / AES-256-CBC: classic modes with NO built-in authentication. "
+        "OpenCryptUI adds an Ed25519 tamper-evidence signature, but the AEAD ciphers above "
+        "are preferred because authentication is intrinsic.\n\n"
+        "(Camellia was removed — it is not on the CNSA 2.0 list and offers no AEAD.)\n\n"
+        "Recommendation: AES-256-GCM or ChaCha20-Poly1305 for everyday use; a cascade "
+        "when you want defence against a future break of a single cipher.");
 
     QMessageBox::information(this, "About Ciphers", aboutCiphersText);
 }
@@ -87,8 +96,13 @@ void MainWindow::on_actionAboutIterations_triggered()
         "- Argon2: time-cost (t) of 3 or more, with high memory-cost. Argon2 is memory-hard; the iteration count interacts with memory and parallelism settings.\n"
         "- Scrypt: N = 2^20 (1,048,576) or higher. Scrypt is also memory-hard; high N makes it more resistant to GPU/ASIC attacks.\n"
         "- PBKDF2: 600,000 or more iterations (OWASP 2023). PBKDF2 has no memory-hardness, so it relies entirely on high iteration counts.\n\n"
-        "Note: the Iterations field in this UI maps to the KDF's time-cost parameter. The minimum allowed (10) is suitable only for Argon2 with sufficient memory; PBKDF2 in particular requires far higher counts to be secure.\n\n"
-        "For maximum security, consider using higher iteration counts, especially if performance is not a critical concern.");
+        "Note: the Iterations field maps to each KDF's work-factor parameter, and the "
+        "spinbox minimum is pinned to that KDF's enforced floor — Argon2 = 3 (its strength "
+        "comes from ~1 GiB of memory, not pass count), Scrypt ≈ 2,097,152 opslimit (~100 ms), "
+        "PBKDF2 = 600,000. The engine REFUSES anything below the floor rather than silently "
+        "raising it, so what you set is what is used.\n\n"
+        "For sensitive data, raising the count above the floor only helps if you can afford "
+        "the extra unlock time.");
 
     QMessageBox::information(this, "About Iterations", aboutIterationsText);
 }
@@ -112,11 +126,18 @@ void MainWindow::on_actionSecurityGuide_triggered()
         "• NEVER share passwords through email, messaging, or unencrypted channels\n\n"
         
         "Encryption Settings:\n"
-        "• For highest security, use AES-256-GCM or ChaCha20-Poly1305 ciphers\n"
-        "• Enable HMAC for additional integrity protection\n"
-        "• Use Argon2 KDF when available or Scrypt as alternative\n"
-        "• Use high iteration counts (10+) for sensitive data\n"
-        "• Use tamper evidence features for critical files\n\n"
+        "• Default to AES-256-GCM or ChaCha20-Poly1305 (authenticated encryption)\n"
+        "• Argon2id is the default KDF (memory-hard, ~1 GiB) — keep it unless you\n"
+        "  have a specific reason; the work-factor floors are enforced for you\n"
+        "• For top-tier data, use a cipher cascade (broken only if every layer is)\n"
+        "• Tamper evidence (Ed25519 + per-chunk AEAD) is always on\n\n"
+
+        "Deniability & key splitting:\n"
+        "• Use an encrypted container with a HIDDEN volume: one password opens a\n"
+        "  decoy, another opens the real data, and the hidden one cannot be proven\n"
+        "  to exist. Fill the decoy with believable data.\n"
+        "• Split a password into k-of-n key SHARES so no single seized share — or\n"
+        "  coerced person — can unlock anything (tolerates losing up to n−k).\n\n"
         
         "Safe Computing Practices:\n"
         "• Keep your device secure and updated with latest security patches\n"
