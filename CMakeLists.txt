@@ -197,6 +197,8 @@ set(LIBRARY_SOURCES
     include/secure_string.h
     src/deniable_container.cpp
     include/deniable_container.h
+    src/block_volume.cpp
+    include/block_volume.h
     src/hwkey_stub.cpp
     src/hwkey_linux.cpp
     src/hwkey_macos.cpp
@@ -302,6 +304,26 @@ target_link_libraries(OpenCryptUI PRIVATE EncryptionLib)
 
 # Ensure GenerateVersionHeader is built before the main executable
 add_dependencies(OpenCryptUI GenerateVersionHeader)
+
+# ---- Mountable containers: FUSE driver (Linux/macOS via FUSE, Windows WinFsp) ----
+# Off by default; needs libfuse3-dev. The same source builds against WinFsp
+# (Windows) and macFUSE (macOS), which expose the libfuse API.
+option(OCUI_ENABLE_FUSE "Build opencryptui-mount (needs libfuse3)" OFF)
+if(OCUI_ENABLE_FUSE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FUSE3 REQUIRED IMPORTED_TARGET fuse3)
+    add_executable(opencryptui-mount src/fuse_mount.cpp)
+    set_target_properties(opencryptui-mount PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_include_directories(opencryptui-mount PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/logging)
+    target_link_libraries(opencryptui-mount PRIVATE
+        EncryptionLib PkgConfig::FUSE3
+        Qt5::Core OpenSSL::SSL OpenSSL::Crypto argon2 sodium)
+    target_compile_options(opencryptui-mount PRIVATE ${ENGINE_HARDENING_CFLAGS} ${ENGINE_HARDENING_FORTIFY})
+    target_link_options(opencryptui-mount PRIVATE ${ENGINE_HARDENING_LFLAGS})
+    message(STATUS "FUSE mount driver: ENABLED (fuse3 ${FUSE3_VERSION})")
+endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(PYTHON_EXECUTABLE ${PYTHON_EXECUTABLE})
@@ -456,6 +478,7 @@ add_engine_test(TestEngineV4Deniability tests/test_engine_v4_deniability.cpp)
 add_engine_test(TestEngineV3Fallback    tests/test_engine_v3_fallback.cpp)
 add_engine_test(TestEngineCascade       tests/test_engine_cascade.cpp)
 add_engine_test(TestDeniableContainer   tests/test_deniable_container.cpp)
+add_engine_test(TestBlockVolume         tests/test_block_volume.cpp)
 
 # End-to-end black-box test: exercises the shipped OpenCryptUI binary via
 # QProcess (startup smoke) plus engine round-trip and tamper-rejection cases
@@ -491,6 +514,7 @@ add_test(NAME EngineV4Deniability   COMMAND TestEngineV4Deniability)
 add_test(NAME EngineV3Fallback      COMMAND TestEngineV3Fallback)
 add_test(NAME EngineCascade         COMMAND TestEngineCascade)
 add_test(NAME DeniableContainer     COMMAND TestDeniableContainer)
+add_test(NAME BlockVolume           COMMAND TestBlockVolume)
 add_test(NAME EndToEndBlackbox      COMMAND TestEndToEndBlackbox)
 set_tests_properties(EndToEndBlackbox PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
