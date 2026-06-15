@@ -71,7 +71,13 @@ MainWindow::MainWindow(QWidget *parent)
     // primitives, then speed last. Speed is a tiebreaker, never the headline —
     // and for KDFs a faster result is actively worse (lower attacker cost).
     ui->benchmarkTable->setColumnCount(6);
-    QStringList headers = {"Security", "Cipher", "KDF", "MB/s", "ms", "Iterations"};
+    // "KDF Cost" rather than "Iterations": the value means a DIFFERENT thing
+    // per KDF (Argon2 time-cost passes, Scrypt N, PBKDF2 iterations) and is
+    // NOT comparable across KDFs. Argon2's 3 and PBKDF2's 600000 are both the
+    // secure floor for their respective algorithm — the small number is not
+    // "weaker". Tooltip + the column itself make that explicit so nobody reads
+    // "fewer = weaker".
+    QStringList headers = {"Security", "Cipher", "KDF", "MB/s", "ms", "KDF Cost"};
     ui->benchmarkTable->setHorizontalHeaderLabels(headers);
     ui->benchmarkTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(0)) {
@@ -82,8 +88,22 @@ MainWindow::MainWindow(QWidget *parent)
             "strongest; unauthenticated modes (CTR/CBC) and smaller keys rank "
             "lower; Camellia lowest.\n"
             "  • KDF: Argon2id (memory-hard) > Scrypt (memory-hard) > PBKDF2.\n"
+            "The tier does NOT depend on the KDF Cost number — that value isn't "
+            "comparable across KDFs.\n"
             "Speed only breaks ties between equally-secure rows. For a KDF a "
             "HIGHER ms means a stronger work factor.");
+    }
+    if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(5)) {
+        hdr->setToolTip(
+            "KDF-specific work parameter — NOT comparable across KDFs and NOT "
+            "a factor in the Security tier:\n"
+            "  • Argon2: time-cost passes (security comes mostly from its 1 GiB "
+            "memory cost, so 3 passes is the strong baseline)\n"
+            "  • Scrypt: the N cost parameter (16,384 floor)\n"
+            "  • PBKDF2: SHA-512 iterations — needs 600,000+ precisely because "
+            "each one is cheap and there's no memory cost\n"
+            "A small number here does not mean weaker; look at the Security "
+            "column and the ms (actual cost on this hardware).");
     }
 
     // Enable sorting, then default to Security descending so the strongest
