@@ -37,8 +37,11 @@ signals:
     void progress(int percent);
     void finished(const QString &result, bool success, bool isFile);
     void estimatedTime(const QString &timeStr);
-    void benchmarkResultReady(int iterations, double mbps, double ms, 
+    void benchmarkResultReady(int iterations, double mbps, double ms,
                              const QString &algorithm, const QString &kdf);
+    // Emitted once, after every cipher/KDF combo has been measured. The UI
+    // waits for this before declaring a final "✓ Recommended" config.
+    void benchmarkFinished();
 
 private:
     QString m_path;

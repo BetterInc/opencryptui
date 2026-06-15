@@ -1254,6 +1254,22 @@
                                     <number>8</number>
                                 </property>
                                 <item>
+                                    <widget class="QLabel" name="benchmarkRecommendationLabel">
+                                        <property name="text">
+                                            <string>Run the benchmark to find the most secure + fast configuration for this machine.</string>
+                                        </property>
+                                        <property name="textFormat">
+                                            <enum>Qt::RichText</enum>
+                                        </property>
+                                        <property name="wordWrap">
+                                            <bool>true</bool>
+                                        </property>
+                                        <property name="styleSheet">
+                                            <string>padding: 8px; border-radius: 4px; background: #eef6ee; border: 1px solid #cfe3cf;</string>
+                                        </property>
+                                    </widget>
+                                </item>
+                                <item>
                                     <widget class="QTableWidget" name="benchmarkTable">
                                         <property name="sortingEnabled">
                                             <bool>true</bool>

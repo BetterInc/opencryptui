@@ -63,6 +63,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(worker, &EncryptionWorker::finished, this, &MainWindow::workerFinished);
     connect(worker, &EncryptionWorker::estimatedTime, this, &MainWindow::showEstimatedTime);
     connect(worker, &EncryptionWorker::benchmarkResultReady, this, &MainWindow::updateBenchmarkTable);
+    connect(worker, &EncryptionWorker::benchmarkFinished, this, &MainWindow::onBenchmarkComplete);
 
     workerThread.start();
 
@@ -71,12 +72,12 @@ MainWindow::MainWindow(QWidget *parent)
     // primitives, then speed last. Speed is a tiebreaker, never the headline —
     // and for KDFs a faster result is actively worse (lower attacker cost).
     ui->benchmarkTable->setColumnCount(6);
-    // Last column is the ATTACKER's brute-force rate derived from the measured
-    // KDF time — the security-meaningful number. Lower = better (the attacker
-    // gets fewer password guesses per second). This replaces the old raw
-    // "KDF Cost" column, whose per-KDF parameters (Argon2 t=3 vs Scrypt N vs
-    // PBKDF2 600000) weren't comparable and read backwards ("3 = strong?").
-    QStringList headers = {"Security", "Cipher", "KDF", "MB/s", "ms", "Guesses/s ↓"};
+    // Columns separate the two things a user actually cares about:
+    //   Speed  = bulk cipher throughput (KDF excluded) — higher is better
+    //   Unlock = one-time KDF cost when opening a file
+    //   Crack/s = attacker guess rate, CPU·GPU — lower is better (the security
+    //             signal; GPU column reflects memory-hardness)
+    QStringList headers = {"Security", "Cipher", "KDF", "Speed", "Unlock", "Crack/s (CPU·GPU)"};
     ui->benchmarkTable->setHorizontalHeaderLabels(headers);
     ui->benchmarkTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(0)) {
@@ -89,22 +90,40 @@ MainWindow::MainWindow(QWidget *parent)
             "  • KDF: Argon2id (memory-hard) > Scrypt (memory-hard) > PBKDF2.\n"
             "Speed only breaks ties between equally-secure rows.");
     }
+    if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(3)) {
+        hdr->setToolTip("Bulk encryption throughput of the cipher (key "
+                        "derivation excluded). Higher is better. This is the "
+                        "'fast' that matters for big files.");
+    }
+    if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(4)) {
+        hdr->setToolTip("One-time cost to derive the key when opening a file "
+                        "(the KDF time). A fraction of a second for you, but "
+                        "paid by an attacker on EVERY password guess.");
+    }
     if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(5)) {
         hdr->setToolTip(
-            "Approximate password guesses/sec an attacker gets on ONE CPU core "
-            "against this KDF (≈ 1000 / KDF-ms). LOWER IS BETTER.\n"
-            "Caveat: this is the TIME axis only — it does NOT capture memory-"
-            "hardness. PBKDF2's time is fully GPU/ASIC-parallelizable (cheap to "
-            "run thousands of cores), while Argon2/Scrypt force each guess "
-            "through memory, defeating that. So a memory-hard KDF can show a "
-            "higher CPU rate here yet still rank above PBKDF2 — the Security "
-            "column is the combined judgement; this is just one input to it.");
+            "Password guesses per second an attacker gets — LOWER IS BETTER.\n"
+            "  • CPU: one core (≈ 1000 / unlock-ms).\n"
+            "  • GPU: rough estimate with a GPU/ASIC farm. Memory-hard KDFs "
+            "(Argon2, Scrypt) barely speed up; PBKDF2 parallelizes almost for "
+            "free, which is why its GPU rate explodes and it ranks Weak.");
     }
 
     // Enable sorting, then default to Security descending so the strongest
     // configuration sits at the top.
     ui->benchmarkTable->setSortingEnabled(true);
     ui->benchmarkTable->sortByColumn(0, Qt::DescendingOrder);
+}
+
+double MainWindow::gpuParallelismFactor(const QString &kdf)
+{
+    // Order-of-magnitude estimates of how many parallel guesses a GPU/ASIC
+    // farm runs vs one CPU core, set by the KDF's per-guess memory cost.
+    // These are deliberately rough (shown with "~") — the point is the gap
+    // between memory-hard and non-memory-hard, not a precise figure.
+    if (kdf.compare("Argon2", Qt::CaseInsensitive) == 0) return 4.0;        // 1 GiB/guess
+    if (kdf.compare("Scrypt", Qt::CaseInsensitive) == 0) return 1000.0;     // ~16 MiB/guess
+    return 10000000.0; // PBKDF2 / unknown: no memory cost → massively parallel
 }
 
 MainWindow::SecurityRating MainWindow::securityRatingFor(const QString &cipher, const QString &kdf)
@@ -499,6 +518,17 @@ void MainWindow::checkHardwareAcceleration()
 void MainWindow::on_benchmarkButton_clicked()
 {
     ui->benchmarkTable->setRowCount(0); // Clear previous results
+
+    // Reset the recommendation banner for this run. No recommendation is
+    // shown until benchmarkFinished fires (onBenchmarkComplete) — until then
+    // only a provisional "best so far" line.
+    m_benchRunning = true;
+    m_benchRecTier = -1;
+    m_benchRecMbps = -1.0;
+    ui->benchmarkRecommendationLabel->setText(
+        QStringLiteral("Benchmarking… finding the most secure + fast "
+                       "configuration for this machine."));
+
     SECURE_LOG(DEBUG, "MainWindow", "Running benchmark...");
 
     QStringList algorithms = {
@@ -536,12 +566,30 @@ public:
         return data(Qt::UserRole).toDouble() < other.data(Qt::UserRole).toDouble();
     }
 };
+// Human-friendly formatters for the benchmark cells.
+static QString fmtSpeed(double mbps) {
+    if (mbps >= 1024.0) return QString::number(mbps / 1024.0, 'f', 2) + " GB/s";
+    if (mbps >= 10.0)   return QString::number(mbps, 'f', 0) + " MB/s";
+    return QString::number(mbps, 'f', 1) + " MB/s";
+}
+static QString fmtUnlock(double ms) {
+    if (ms >= 1000.0) return QString::number(ms / 1000.0, 'f', 2) + " s";
+    return QString::number(ms, 'f', 0) + " ms";
+}
+static QString fmtRate(double r) {
+    if (r >= 1.0e9) return "~" + QString::number(r / 1.0e9, 'f', 0) + "B";
+    if (r >= 1.0e6) return "~" + QString::number(r / 1.0e6, 'f', 0) + "M";
+    if (r >= 1.0e3) return "~" + QString::number(r / 1.0e3, 'f', 0) + "k";
+    if (r >= 100.0) return QString::number(r, 'f', 0);
+    return QString::number(r, 'f', 1);
+}
 } // namespace
 
 void MainWindow::updateBenchmarkTable(int iterations, double mbps, double ms, const QString &cipher, const QString &kdf)
 {
-    SECURE_LOG(DEBUG, "MainWindow", QString("Update Benchmark Table: iterations=%1, mbps=%2, ms=%3, cipher=%4, kdf=%5")
-             .arg(iterations).arg(mbps).arg(ms).arg(cipher).arg(kdf));
+    Q_UNUSED(iterations);
+    SECURE_LOG(DEBUG, "MainWindow", QString("Update Benchmark Table: mbps=%1, kdfMs=%2, cipher=%3, kdf=%4")
+             .arg(mbps).arg(ms).arg(cipher).arg(kdf));
 
     // Disable sorting while inserting: with sorting live, each setItem can
     // re-sort and move the partially-filled row out from under us, leaving
@@ -555,41 +603,83 @@ void MainWindow::updateBenchmarkTable(int iterations, double mbps, double ms, co
     const SecurityRating rating = securityRatingFor(cipher, kdf);
 
     // Security cell. DisplayRole shows "★★★ Strong"; the sort key in UserRole
-    // is composite (tier major, throughput minor) so sorting the Security
-    // column — the default — orders by security tier first and uses MB/s only
-    // to break ties between equally-secure rows. Speed never outranks security.
+    // is composite (tier major, throughput minor) so the default sort orders
+    // by security tier first and uses cipher speed only to break ties.
     auto* secItem = new SortKeyItem(QString("%1 %2").arg(rating.stars, rating.label),
                                     rating.tier * 1000000.0 + mbps);
-    secItem->setToolTip(QString("Tier %1 of 3 — %2. Speed is only a tiebreaker; "
-                                "for KDFs a higher ms is a stronger work factor.")
+    secItem->setToolTip(QString("Tier %1 of 3 — %2. Speed only breaks ties "
+                                "between equally-secure rows.")
                             .arg(rating.tier).arg(rating.label));
-    // Colour-code at a glance: green = strong, amber = good, red = weak.
     QColor tierColor = (rating.tier == 3) ? QColor(0x1b, 0x8a, 0x3a)
                      : (rating.tier == 2) ? QColor(0xb8, 0x7d, 0x00)
                                           : QColor(0xc0, 0x39, 0x2b);
     secItem->setForeground(tierColor);
 
-    // Attacker brute-force rate ≈ guesses/sec against the KDF (1000 / ms,
-    // single core). Lower is better; this is the real cross-KDF-comparable
-    // security signal and orders the same way as the tier. iterations isn't
-    // shown anymore — it was the misleading non-comparable raw parameter.
-    const double guessesPerSec = (ms > 0.0) ? (1000.0 / ms) : 0.0;
-    const QString guessText = (guessesPerSec >= 100.0)
-        ? QString::number(guessesPerSec, 'f', 0)
-        : QString::number(guessesPerSec, 'f', 1);
+    // Attacker rates (lower = better). CPU = one core; GPU = rough farm
+    // estimate that folds in memory-hardness, so it orders the same way as the
+    // security tier (Argon2 lowest → PBKDF2 highest).
+    const double cpuRate = (ms > 0.0) ? (1000.0 / ms) : 0.0;
+    const double gpuRate = cpuRate * gpuParallelismFactor(kdf);
+    const QString crackText = QString("%1 · %2").arg(fmtRate(cpuRate), fmtRate(gpuRate));
 
     ui->benchmarkTable->setItem(row, 0, secItem);
     ui->benchmarkTable->setItem(row, 1, new QTableWidgetItem(cipher));
     ui->benchmarkTable->setItem(row, 2, new QTableWidgetItem(kdf));
-    ui->benchmarkTable->setItem(row, 3, new SortKeyItem(QString::number(mbps, 'f', 2), mbps));
-    ui->benchmarkTable->setItem(row, 4, new SortKeyItem(QString::number(ms, 'f', 2), ms));
-    ui->benchmarkTable->setItem(row, 5, new SortKeyItem(guessText, guessesPerSec));
+    ui->benchmarkTable->setItem(row, 3, new SortKeyItem(fmtSpeed(mbps), mbps));
+    ui->benchmarkTable->setItem(row, 4, new SortKeyItem(fmtUnlock(ms), ms));
+    // Sort the crack column by the GPU rate — the real-world attacker number.
+    ui->benchmarkTable->setItem(row, 5, new SortKeyItem(crackText, gpuRate));
 
     ui->benchmarkTable->setSortingEnabled(wasSorting);
-    // Keep the strongest configuration pinned to the top after each new row.
     if (wasSorting) {
         ui->benchmarkTable->sortByColumn(0, Qt::DescendingOrder);
     }
+
+    // ---- Track the best config so far: most secure, then fastest ---------
+    // Pick the highest security tier seen; within it, the highest cipher speed.
+    // We do NOT declare a final recommendation here — the run is still in
+    // progress and a later combo could win. Only show a provisional
+    // "best so far" line; onBenchmarkComplete() promotes it once every combo
+    // has actually been measured.
+    if (rating.tier > m_benchRecTier ||
+        (rating.tier == m_benchRecTier && mbps > m_benchRecMbps)) {
+        m_benchRecTier      = rating.tier;
+        m_benchRecMbps      = mbps;
+        m_benchRecCipher    = cipher;
+        m_benchRecKdf       = kdf;
+        m_benchRecTierLabel = rating.label;
+        m_benchRecUnlockMs  = ms;
+        m_benchRecGpuRate   = gpuRate;
+    }
+
+    if (m_benchRunning && m_benchRecTier > 0) {
+        ui->benchmarkRecommendationLabel->setText(
+            QString("Benchmarking… best so far: <b>%1 + %2</b> (%3). "
+                    "Final recommendation when the run completes.")
+                .arg(m_benchRecCipher, m_benchRecKdf, m_benchRecTierLabel));
+    }
+}
+
+void MainWindow::onBenchmarkComplete()
+{
+    m_benchRunning = false;
+
+    if (m_benchRecTier < 0) {
+        ui->benchmarkRecommendationLabel->setText(
+            QStringLiteral("Benchmark finished, but no configuration could be "
+                           "measured on this machine."));
+        return;
+    }
+
+    // Now that every combo has been measured, promote the winner to a real
+    // recommendation: highest security tier, fastest cipher within it.
+    ui->benchmarkRecommendationLabel->setText(
+        QString("<b>✓ Recommended for this machine: %1 + %2</b><br/>"
+                "%3 security · encrypts at <b>%4</b> · unlocks in %5 · "
+                "attacker ≈ %6 guesses/s even with a GPU")
+            .arg(m_benchRecCipher, m_benchRecKdf, m_benchRecTierLabel,
+                 fmtSpeed(m_benchRecMbps), fmtUnlock(m_benchRecUnlockMs),
+                 fmtRate(m_benchRecGpuRate)));
 }
 
 void MainWindow::safeConnect(const QObject *sender, const char *signal, const QObject *receiver, const char *method)

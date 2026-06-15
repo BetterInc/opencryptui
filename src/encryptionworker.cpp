@@ -233,6 +233,9 @@ void EncryptionWorker::runBenchmark() {
     }
 
     SECURE_LOG(INFO, "EncryptionWorker", "Benchmark complete.");
+    // Signal the UI that ALL combos are measured, so it can finalise the
+    // recommendation. Before this fires the banner only shows "best so far".
+    emit benchmarkFinished();
 }
 
 void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &kdf, bool useHardwareAcceleration) {
@@ -273,21 +276,27 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
     // Scrypt=2097152 opslimit, PBKDF2=600000).
     int iterations = EncryptionEngine::iterationFloorForKdf(kdf);
 
-    QElapsedTimer timer;
-    timer.start();
-
     const EVP_CIPHER *cipher = m_engine.getCipher(algorithm);
 
     if (!cipher) {
-        SECURE_LOG(WARNING, "EncryptionWorker", 
+        SECURE_LOG(WARNING, "EncryptionWorker",
             QString("Skipping %1 - not supported").arg(algorithm));
         return;
     }
 
     QStringList keyfilePaths; // If no keyfiles, use an empty QStringList
+
+    // ---- Measurement 1: KDF cost (the SECURITY signal) -------------------
+    // This is the one-time "unlock" time and, crucially, the per-guess cost
+    // an attacker pays. Timed ALONE — mixing it into the throughput number is
+    // exactly what made the old benchmark unreadable (a slow Argon2 made the
+    // cipher look slow when it wasn't).
+    QElapsedTimer kdfTimer;
+    kdfTimer.start();
     key = m_engine.deriveKey("password", salt, keyfilePaths, kdf, iterations);
+    const double kdfMs = kdfTimer.nsecsElapsed() / 1.0e6;
     if (key.isEmpty()) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", 
+        SECURE_LOG(ERROR_LEVEL, "EncryptionWorker",
             QString("Key derivation failed for KDF: %1").arg(kdf));
         return;
     }
@@ -346,45 +355,47 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
     }
     
     int len = 0;
-    int ciphertextLen = 0;
-    
-    bool encryptSuccess = EVP_EncryptUpdate(ctx, 
-                                reinterpret_cast<unsigned char *>(ciphertext.data()), 
-                                &len,
-                                reinterpret_cast<const unsigned char *>(testData.data()), 
-                                testData.size()) == 1;
-    
-    if (!encryptSuccess) {
-        SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", "EVP_EncryptUpdate failed");
-        EVP_CIPHER_CTX_free(ctx);
-        return;
+
+    // ---- Measurement 2: cipher throughput (the SPEED signal) -------------
+    // Pure bulk-encryption rate, with the KDF already done above so it can't
+    // skew the number. One 1 MiB EVP_EncryptUpdate is too fast to time
+    // reliably, so stream the buffer through the same context many times to
+    // process enough data (~64 MiB) for a stable measurement.
+    const int reps = 64;
+    QElapsedTimer cipherTimer;
+    cipherTimer.start();
+    for (int i = 0; i < reps; ++i) {
+        if (EVP_EncryptUpdate(ctx,
+                reinterpret_cast<unsigned char *>(ciphertext.data()), &len,
+                reinterpret_cast<const unsigned char *>(testData.data()),
+                testData.size()) != 1) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", "EVP_EncryptUpdate failed");
+            EVP_CIPHER_CTX_free(ctx);
+            return;
+        }
     }
-    
-    ciphertextLen += len;
-    
-    encryptSuccess = EVP_EncryptFinal_ex(ctx, 
-                            reinterpret_cast<unsigned char *>(ciphertext.data()) + len, 
-                            &len) == 1;
-                            
-    if (!encryptSuccess) {
+    if (EVP_EncryptFinal_ex(ctx,
+            reinterpret_cast<unsigned char *>(ciphertext.data()), &len) != 1) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionWorker", "EVP_EncryptFinal_ex failed");
         EVP_CIPHER_CTX_free(ctx);
         return;
     }
-    
-    ciphertextLen += len;
-    
+    const double cipherSec = cipherTimer.nsecsElapsed() / 1.0e9;
+
     // Always free the cipher context
     EVP_CIPHER_CTX_free(ctx);
-    
+
     // Clear memory as soon as we're done with it to reduce memory footprint
     ciphertext.clear();
     testData.clear();
 
-    qint64 elapsed = timer.elapsed();
-    double throughput = (dataSize / (1024.0 * 1024.0)) / (elapsed / 1000.0);
+    const double mibProcessed = reps * (dataSize / (1024.0 * 1024.0));
+    const double throughput = (cipherSec > 0.0) ? (mibProcessed / cipherSec) : 0.0;
 
-    emit benchmarkResultReady(iterations, throughput, elapsed, algorithm, kdf);
+    // Signal carries: (iterations, cipher MB/s, KDF ms, cipher, kdf).
+    // NOTE the second arg is now pure cipher throughput and the third is the
+    // KDF-only time — the UI separates "Speed" from "Unlock"/crack-resistance.
+    emit benchmarkResultReady(iterations, throughput, kdfMs, algorithm, kdf);
 }
 
 EncryptionWorker::~EncryptionWorker()

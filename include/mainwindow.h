@@ -62,6 +62,9 @@ private slots:
     void on_m_cryptoProviderComboBox_currentIndexChanged(const QString &providerName);
     void showProviderCapabilities();
     void updateBenchmarkTable(int iterations, double mbps, double ms, const QString &algorithm, const QString &kdf);
+    // Fired when the worker has measured every combo — promotes the
+    // "best so far" line to the final "✓ Recommended" recommendation.
+    void onBenchmarkComplete();
 
     // Disk operations slots - these will be implemented in mainwindow_disk.cpp
     void on_diskEncryptButton_clicked();
@@ -89,6 +92,13 @@ private:
     struct SecurityRating { int tier; QString label; QString stars; };
     static SecurityRating securityRatingFor(const QString &cipher, const QString &kdf);
 
+    // Rough order-of-magnitude multiplier for how many parallel guesses an
+    // attacker with a GPU/ASIC farm can run against this KDF, relative to one
+    // CPU core. Driven by the KDF's per-guess memory cost: PBKDF2 (no memory)
+    // parallelizes almost freely; Argon2 (1 GiB/guess) barely at all. Used to
+    // turn the measured single-core rate into a realistic attacker estimate.
+    static double gpuParallelismFactor(const QString &kdf);
+
 private:
     Ui::MainWindow *ui;
     EncryptionEngine encryptionEngine;
@@ -106,6 +116,20 @@ private:
     QLabel *filePasswordStrengthLabel;
     QLabel *folderPasswordStrengthLabel;
     QLabel *diskPasswordStrengthLabel;
+
+    // Running "best" config for the benchmark recommendation banner:
+    // highest security tier, then highest cipher throughput within that tier.
+    // Reset when a benchmark run starts; updated as each result arrives. The
+    // banner only shows "best so far" until benchmarkFinished fires — a real
+    // recommendation can't be made before every combo has been measured.
+    int     m_benchRecTier = -1;
+    double  m_benchRecMbps = -1.0;
+    QString m_benchRecCipher;
+    QString m_benchRecKdf;
+    QString m_benchRecTierLabel;
+    double  m_benchRecUnlockMs = 0.0;
+    double  m_benchRecGpuRate  = 0.0;
+    bool    m_benchRunning     = false;
 
     void setupUI();
     void setupComboBoxes();
