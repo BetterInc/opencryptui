@@ -126,6 +126,17 @@ private:
     // turn the measured single-core rate into a realistic attacker estimate.
     static double gpuParallelismFactor(const QString &kdf);
 
+    // Easy/Advanced UI. buildEasyHome() constructs the simple home widget once;
+    // applyUiMode(advanced) shows the full tabs (advanced) or the Easy home.
+    void buildEasyHome();
+    void applyUiMode(bool advanced);
+
+private slots:
+    // Easy-home actions: populate the existing tab widgets with secure defaults
+    // and trigger the existing (tested) encrypt/decrypt slots.
+    void onEasyEncrypt();
+    void onEasyDecrypt();
+
 private:
     Ui::MainWindow *ui;
     EncryptionEngine encryptionEngine;
@@ -133,7 +144,17 @@ private:
     QThread workerThread;
     bool m_signalsConnected;
     QString currentTheme;
-    
+
+    // Easy/Advanced UI state + widgets (Easy home is built in code and inserted
+    // above the existing tabs; mode toggles which is visible).
+    bool m_advancedMode = false;
+    QWidget   *m_easyHome = nullptr;
+    QString    m_easyKind = "File";     // File | Folder | Vault | Disk
+    class QLineEdit *m_easyPath = nullptr;
+    class QLineEdit *m_easyPassword = nullptr;
+    class QLineEdit *m_easyConfirm = nullptr;
+    class QAction   *m_advancedModeAction = nullptr;
+
     static QTextStream *s_logStream;
     
     QLabel *fileSecurityStatusLabel;

@@ -228,6 +228,10 @@ void MainWindow::setupUI()
     
     // Populate disk selection dropdown
     on_refreshDisksButton_clicked();
+
+    // Build the Easy-mode home (hidden until applyUiMode decides). Must run
+    // before loadPreferences(), which applies the saved/default mode.
+    buildEasyHome();
 }
 
 MainWindow::~MainWindow()

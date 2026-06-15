@@ -61,6 +61,7 @@ private slots:
     void testCryptoProviderSwitching();
     void testTamperDetection();
     void testContainerCreateOpen();
+    void testEasyModeToggleAndEncrypt();
     void testEntropyQuality();
     void testKeyDerivation();
     

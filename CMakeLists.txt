@@ -171,6 +171,7 @@ set(LIBRARY_SOURCES
     src/mainwindow_preferences.cpp
     src/mainwindow_fileops.cpp
     src/mainwindow_container.cpp
+    src/mainwindow_easymode.cpp
     include/mainwindow.h
     src/mainwindow_disk.cpp
     src/mainwindow_entropy.cpp
@@ -360,6 +361,7 @@ set(TEST_SOURCES
     tests/test_ui_smoke.cpp
     tests/test_ui_tamper.cpp
     tests/test_ui_container.cpp
+    tests/test_ui_easymode.cpp
     tests/test_ui_common.h
 )
 

@@ -85,6 +85,11 @@ void MainWindow::loadPreferences()
     QString theme = settingsObj.value("theme").toString("Light");
     applyTheme(theme);
 
+    // UI mode: "Easy" (simple home) or "Advanced" (full tabs). Default Easy so
+    // first-time / non-expert users get the simple experience.
+    const QString mode = settingsObj.value("mode").toString("Easy");
+    applyUiMode(mode == "Advanced");
+
     settingsFile.close();
 }
 
@@ -113,6 +118,7 @@ void MainWindow::savePreferences()
 
     QJsonObject settingsObj;
     settingsObj["theme"] = currentTheme; // Assuming currentTheme is a member variable holding the current theme
+    settingsObj["mode"] = m_advancedMode ? "Advanced" : "Easy";
 
     QJsonDocument settingsDoc(settingsObj);
     settingsFile.write(settingsDoc.toJson());
