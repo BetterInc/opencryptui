@@ -200,6 +200,8 @@ set(LIBRARY_SOURCES
     include/deniable_container.h
     src/block_volume.cpp
     include/block_volume.h
+    src/shamir.cpp
+    include/shamir.h
     src/hwkey_stub.cpp
     src/hwkey_linux.cpp
     src/hwkey_macos.cpp
@@ -488,6 +490,7 @@ add_engine_test(TestEngineV3Fallback    tests/test_engine_v3_fallback.cpp)
 add_engine_test(TestEngineCascade       tests/test_engine_cascade.cpp)
 add_engine_test(TestDeniableContainer   tests/test_deniable_container.cpp)
 add_engine_test(TestBlockVolume         tests/test_block_volume.cpp)
+add_engine_test(TestShamir              tests/test_shamir.cpp)
 
 # End-to-end black-box test: exercises the shipped OpenCryptUI binary via
 # QProcess (startup smoke) plus engine round-trip and tamper-rejection cases
@@ -524,6 +527,7 @@ add_test(NAME EngineV3Fallback      COMMAND TestEngineV3Fallback)
 add_test(NAME EngineCascade         COMMAND TestEngineCascade)
 add_test(NAME DeniableContainer     COMMAND TestDeniableContainer)
 add_test(NAME BlockVolume           COMMAND TestBlockVolume)
+add_test(NAME Shamir                COMMAND TestShamir)
 add_test(NAME EndToEndBlackbox      COMMAND TestEndToEndBlackbox)
 set_tests_properties(EndToEndBlackbox PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
