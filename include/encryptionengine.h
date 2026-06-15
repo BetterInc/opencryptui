@@ -5,6 +5,7 @@
 #include <QString>
 #include <QFile>
 #include <QStringList>
+#include <QVector>
 #include <QDateTime>
 #include <QMutex>
 #include <vector>
@@ -100,6 +101,17 @@ public:
     // Removed getLastIv method for security reasons
 
     bool isHardwareAccelerationSupported() const;
+
+    // ---- Cipher cascades (public: UI offers them, tests exercise them) ----
+    // cascadeRecipe(id): ordered AEAD ciphers for a cascade id (empty if id==0
+    //   or unknown). Layer 0 is applied first (innermost), then wrapped by the
+    //   next. Each layer uses an independent HKDF subkey.
+    // cascadeIdForAlgorithm(name): the cascade id for a cascade display string,
+    //   or 0 if `name` is an ordinary single cipher.
+    // cascadeAlgorithmNames(): display strings to offer in the UI.
+    static QStringList cascadeRecipe(quint8 cascadeId);
+    static quint8      cascadeIdForAlgorithm(const QString& algorithm);
+    static QStringList cascadeAlgorithmNames();
 
     // Key derivation entry points.
     // QString variant: thin wrapper — converts to SecureString and delegates.
@@ -208,6 +220,13 @@ private:
     static constexpr quint8 ALG_ID_AES192_CBC         = 0x0A;
     static constexpr quint8 ALG_ID_CAMELLIA256_CBC     = 0x0B;
     static constexpr quint8 ALG_ID_CAMELLIA128_CBC     = 0x0C;
+    // Cipher cascade: chunks are encrypted through an ordered list of AEAD
+    // ciphers, each with an independent subkey, so breaking the file requires
+    // breaking every cipher in the chain. The specific recipe lives in the v4
+    // inner header's reserved byte (a cascade id); this single algId marks
+    // "this is a cascade". Inspired by VeraCrypt's AES-Twofish-Serpent, but
+    // built from the AEAD primitives we already trust (AES-GCM + ChaCha20).
+    static constexpr quint8 ALG_ID_CASCADE            = 0xC0;
     static constexpr quint8 ALG_ID_UNKNOWN            = 0xFF;
 
     // KDF IDs
@@ -224,6 +243,7 @@ private:
     static int ivSizeForAlgorithm(const QString& algorithm); // Fix #7
     static bool isAeadAlgorithm(const QString& algorithm);
 
+
     // v3 per-chunk AEAD helpers (encryptionengine_chunks.cpp)
     // buildNonce: XOR the 12-byte base_iv with uint32_be(chunkIndex) in the low 4 bytes.
     static QByteArray buildChunkNonce(const QByteArray& baseIv, quint32 chunkIndex);
@@ -233,6 +253,20 @@ private:
     // decryptChunk: split last 16 bytes as tag, verify+decrypt, return plaintext (empty on auth failure).
     static QByteArray decryptChunk(const QByteArray& key, const QByteArray& nonce,
                                    const QByteArray& cipherChunkWithTag, const QString& algorithm);
+
+    // Cascade variants: apply ciphers[] in sequence with layerKeys[]. Encrypt
+    // returns the nested ciphertext (empty on error). Decrypt unwraps in
+    // reverse; *ok distinguishes a real auth failure from a legitimately empty
+    // plaintext chunk.
+    static QByteArray cascadeEncryptChunk(const QVector<QByteArray>& layerKeys,
+                                          const QByteArray& nonce,
+                                          const QByteArray& plainChunk,
+                                          const QStringList& ciphers);
+    static QByteArray cascadeDecryptChunk(const QVector<QByteArray>& layerKeys,
+                                          const QByteArray& nonce,
+                                          const QByteArray& cipherChunk,
+                                          const QStringList& ciphers,
+                                          bool* ok);
 
     // v3 encrypt/decrypt implementations (called from cryptOperation).
     bool cryptOperationV3Encrypt(QFile& inputFile, QFile& outputFile,
@@ -260,7 +294,8 @@ private:
                                  const QByteArray& masterKeyBytes,
                                  const QByteArray& salt, const QByteArray& outerIv,
                                  quint8 algId, quint8 kId, int iterations,
-                                 const QString& algorithm, const QString& outputPath);
+                                 const QString& algorithm, const QString& outputPath,
+                                 quint8 cascadeId = 0);
     bool cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFile,
                                  const class SecureString& password,
                                  const QStringList& keyfilePaths,

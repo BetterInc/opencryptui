@@ -247,8 +247,13 @@ void MainWindow::setupComboBoxes()
                               "AES-256-GCM", "ChaCha20-Poly1305", "AES-256-CTR", "AES-256-CBC",
                               "AES-128-GCM", "AES-128-CTR", "AES-192-GCM", "AES-192-CTR",
                               "AES-128-CBC", "AES-192-CBC", "Camellia-256-CBC", "Camellia-128-CBC"};
+    // Append cipher cascades (multi-layer AEAD chains) after the single ciphers.
+    // These route through the deniable v4 path; offered on file/folder tabs.
+    const QStringList cascades = EncryptionEngine::cascadeAlgorithmNames();
     ui->fileAlgorithmComboBox->addItems(algorithms);
+    ui->fileAlgorithmComboBox->addItems(cascades);
     ui->folderAlgorithmComboBox->addItems(algorithms);
+    ui->folderAlgorithmComboBox->addItems(cascades);
     ui->diskAlgorithmComboBox->addItems(algorithms);
 
     QStringList kdfs = {"Argon2", "Scrypt", "PBKDF2"};
@@ -872,11 +877,16 @@ void MainWindow::on_m_cryptoProviderComboBox_currentIndexChanged(const QString &
 
         // Update available algorithms and KDFs based on the selected provider
         QStringList algorithms = encryptionEngine.supportedCiphers();
+        // Cascades use EVP directly (independent of the selected provider), so
+        // they stay available across provider switches on the file/folder tabs.
+        const QStringList cascades = EncryptionEngine::cascadeAlgorithmNames();
         ui->fileAlgorithmComboBox->clear();
         ui->folderAlgorithmComboBox->clear();
         ui->diskAlgorithmComboBox->clear();
         ui->fileAlgorithmComboBox->addItems(algorithms);
+        ui->fileAlgorithmComboBox->addItems(cascades);
         ui->folderAlgorithmComboBox->addItems(algorithms);
+        ui->folderAlgorithmComboBox->addItems(cascades);
         ui->diskAlgorithmComboBox->addItems(algorithms);
 
         QStringList kdfs = encryptionEngine.supportedKDFs();

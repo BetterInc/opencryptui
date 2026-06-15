@@ -452,6 +452,7 @@ add_engine_test(TestPqHybrid            tests/test_pq_hybrid.cpp)
 add_engine_test(TestHwKeyStub           tests/test_hwkey_stub.cpp)
 add_engine_test(TestEngineV4Deniability tests/test_engine_v4_deniability.cpp)
 add_engine_test(TestEngineV3Fallback    tests/test_engine_v3_fallback.cpp)
+add_engine_test(TestEngineCascade       tests/test_engine_cascade.cpp)
 
 # End-to-end black-box test: exercises the shipped OpenCryptUI binary via
 # QProcess (startup smoke) plus engine round-trip and tamper-rejection cases
@@ -485,6 +486,7 @@ add_test(NAME PqHybrid              COMMAND TestPqHybrid)
 add_test(NAME HwKeyStub             COMMAND TestHwKeyStub)
 add_test(NAME EngineV4Deniability   COMMAND TestEngineV4Deniability)
 add_test(NAME EngineV3Fallback      COMMAND TestEngineV3Fallback)
+add_test(NAME EngineCascade         COMMAND TestEngineCascade)
 add_test(NAME EndToEndBlackbox      COMMAND TestEndToEndBlackbox)
 set_tests_properties(EndToEndBlackbox PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"

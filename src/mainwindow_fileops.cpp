@@ -135,7 +135,10 @@ void MainWindow::startWorker(bool encrypt, bool isFile)
     QStringList supportedCiphers = encryptionEngine.supportedCiphers();
     QStringList supportedKDFs = encryptionEngine.supportedKDFs();
 
-    if (!supportedCiphers.contains(algorithm))
+    // Cascades use EVP directly (not the provider cipher list), so accept them
+    // regardless of the current provider; only validate plain single ciphers.
+    const bool isCascade = EncryptionEngine::cascadeIdForAlgorithm(algorithm) != 0;
+    if (!isCascade && !supportedCiphers.contains(algorithm))
     {
         QMessageBox::warning(this, "Error",
                              QString("The selected cipher '%1' is not supported by the %2 provider.\n\n"

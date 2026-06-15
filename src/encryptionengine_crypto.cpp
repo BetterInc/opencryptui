@@ -148,7 +148,9 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         // v3 files are NOT deniable (they have plaintext OCUI magic at
         // offset 0). Tests that use this hook should unset the variable
         // immediately after the encrypt call.
+        // Cascades are v4-only (v3 has no way to represent a multi-cipher chain).
         const bool forceV3 = isAEADCipher &&
+                             cascadeIdForAlgorithm(algorithm) == 0 &&
                              qEnvironmentVariableIsSet("OCUI_TEST_FORCE_V3") &&
                              qEnvironmentVariable("OCUI_TEST_FORCE_V3") == QStringLiteral("1");
 
@@ -165,7 +167,8 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
             success = cryptOperationV4Encrypt(inputFile, outputFile,
                                               masterKey, salt, iv,
                                               algId, kId, iterations,
-                                              algorithm, outputPath);
+                                              algorithm, outputPath,
+                                              cascadeIdForAlgorithm(algorithm));
             // masterKey will be zeroed by the cleanup guard.
         } else if (isAEADCipher && forceV3) {
             // TEST-ONLY: emit v3 (chunked AEAD with plaintext OCUI header).

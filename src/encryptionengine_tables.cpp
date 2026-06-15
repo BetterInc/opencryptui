@@ -10,12 +10,50 @@
 //   XChaCha20                    → 24 bytes (not currently exposed, but guarded)
 /*static*/ int EncryptionEngine::ivSizeForAlgorithm(const QString& algorithm)
 {
+    // Cascades are AEAD-only (v4) and use a 12-byte base nonce like GCM.
+    if (cascadeIdForAlgorithm(algorithm) != 0)
+        return 12;
     if (algorithm.contains("GCM") ||
         algorithm == "ChaCha20-Poly1305")
         return 12;
     if (algorithm == "XChaCha20")
         return 24;
     return 16; // CBC, CTR, Camellia, fallback
+}
+
+// ---- Cipher cascades --------------------------------------------------------
+// A cascade encrypts each chunk through several AEAD ciphers in sequence, each
+// with an independent subkey. OpenSSL doesn't ship Twofish/Serpent, so instead
+// of VeraCrypt's exact AES-Twofish-Serpent we chain the two strongest AEAD
+// primitives we already trust — AES-256-GCM (a block cipher) and
+// ChaCha20-Poly1305 (a stream cipher from a different design family). Breaking
+// the file then requires breaking BOTH. The cascade id is stored in the v4
+// inner header's reserved byte so decrypt knows the exact recipe.
+/*static*/ QStringList EncryptionEngine::cascadeRecipe(quint8 cascadeId)
+{
+    switch (cascadeId) {
+    case 1: return {"AES-256-GCM", "ChaCha20-Poly1305"};
+    case 2: return {"ChaCha20-Poly1305", "AES-256-GCM"};
+    case 3: return {"AES-256-GCM", "ChaCha20-Poly1305", "AES-256-GCM"};
+    default: return {}; // 0 / unknown → not a cascade
+    }
+}
+
+/*static*/ quint8 EncryptionEngine::cascadeIdForAlgorithm(const QString& algorithm)
+{
+    if (algorithm == "Cascade: AES-256-GCM + ChaCha20-Poly1305")              return 1;
+    if (algorithm == "Cascade: ChaCha20-Poly1305 + AES-256-GCM")             return 2;
+    if (algorithm == "Cascade: AES-256-GCM + ChaCha20-Poly1305 + AES-256-GCM") return 3;
+    return 0;
+}
+
+/*static*/ QStringList EncryptionEngine::cascadeAlgorithmNames()
+{
+    return {
+        "Cascade: AES-256-GCM + ChaCha20-Poly1305",
+        "Cascade: ChaCha20-Poly1305 + AES-256-GCM",
+        "Cascade: AES-256-GCM + ChaCha20-Poly1305 + AES-256-GCM",
+    };
 }
 
 // Algorithm <-> numeric-ID mappings. The ID is stored in the OCUI v2
@@ -35,6 +73,7 @@
     if (algorithm == "AES-192-CBC")        return ALG_ID_AES192_CBC;
     if (algorithm == "Camellia-256-CBC")   return ALG_ID_CAMELLIA256_CBC;
     if (algorithm == "Camellia-128-CBC")   return ALG_ID_CAMELLIA128_CBC;
+    if (cascadeIdForAlgorithm(algorithm) != 0) return ALG_ID_CASCADE;
     return ALG_ID_UNKNOWN;
 }
 

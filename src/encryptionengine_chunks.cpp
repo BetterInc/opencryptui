@@ -31,7 +31,53 @@
 // ---------------------------------------------------------------------------
 /*static*/ bool EncryptionEngine::isAeadAlgorithm(const QString& algorithm)
 {
+    // Cascades are AEAD chains → routed through the v4 path like any AEAD.
+    if (cascadeIdForAlgorithm(algorithm) != 0) return true;
     return algorithm.contains("GCM") || algorithm == "ChaCha20-Poly1305";
+}
+
+// ---------------------------------------------------------------------------
+// Cascade chunk helpers — apply N AEAD ciphers in sequence, each with its own
+// key. layerKeys[L] / ciphers[L] is layer L; layer 0 is innermost (applied
+// first on encrypt, last on decrypt). The same per-chunk nonce is reused
+// across layers: safe because each layer uses a DISTINCT key, and GCM/Poly1305
+// nonce-uniqueness is required only per-key.
+// ---------------------------------------------------------------------------
+/*static*/ QByteArray EncryptionEngine::cascadeEncryptChunk(const QVector<QByteArray>& layerKeys,
+                                                            const QByteArray& nonce,
+                                                            const QByteArray& plainChunk,
+                                                            const QStringList& ciphers)
+{
+    QByteArray data = plainChunk;
+    for (int L = 0; L < ciphers.size(); ++L) {
+        data = encryptChunk(layerKeys[L], nonce, data, ciphers[L]);
+        if (data.isEmpty()) return QByteArray(); // layer failed
+    }
+    return data;
+}
+
+/*static*/ QByteArray EncryptionEngine::cascadeDecryptChunk(const QVector<QByteArray>& layerKeys,
+                                                            const QByteArray& nonce,
+                                                            const QByteArray& cipherChunk,
+                                                            const QStringList& ciphers,
+                                                            bool* ok)
+{
+    if (ok) *ok = false;
+    QByteArray data = cipherChunk;
+    // Unwrap in reverse: outermost layer (last) first, innermost (0) last.
+    for (int L = ciphers.size() - 1; L >= 0; --L) {
+        const bool innermost = (L == 0);
+        const bool layerWasEmptyPlain =
+            innermost && data.size() == OCUI_GCM_TAG_SIZE; // empty plaintext chunk
+        QByteArray out = decryptChunk(layerKeys[L], nonce, data, ciphers[L]);
+        if (out.isEmpty() && !layerWasEmptyPlain) {
+            // Authentication failure at this layer (input had real ciphertext).
+            return QByteArray();
+        }
+        data = out;
+    }
+    if (ok) *ok = true;
+    return data; // may be empty for a legitimately empty plaintext chunk
 }
 
 // ---------------------------------------------------------------------------
@@ -515,12 +561,17 @@ bool EncryptionEngine::cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFi
                                                 const QByteArray& outerIv,
                                                 quint8 algId, quint8 kId, int iterations,
                                                 const QString& algorithm,
-                                                const QString& /*outputPath*/)
+                                                const QString& /*outputPath*/,
+                                                quint8 cascadeId)
 {
     if (masterKeyBytes.size() < static_cast<int>(crypto_kdf_KEYBYTES)) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "V4 encrypt: master key too short");
         return false;
     }
+
+    // Cascade recipe (empty for the ordinary single-cipher path).
+    const QStringList cascade = cascadeRecipe(cascadeId);
+    const bool isCascade = !cascade.isEmpty();
 
     // -----------------------------------------------------------------------
     // Step 1: Derive three subkeys from the master.
@@ -548,14 +599,36 @@ bool EncryptionEngine::cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFi
         reinterpret_cast<unsigned char*>(sigKey.data()), crypto_sign_SEEDBYTES,
         2, "OCUI-SIG", kdfMaster);
 
+    // For a cascade, derive one independent 32-byte key per layer (subkey ids
+    // 11, 12, …) — disjoint from the enc(1)/sig(2)/outer(3) ids above.
+    QVector<QByteArray> layerKeys;
+    int rcCascade = 0;
+    if (isCascade) {
+        for (int L = 0; L < cascade.size(); ++L) {
+            QByteArray k(32, 0);
+            int rc = crypto_kdf_derive_from_key(
+                reinterpret_cast<unsigned char*>(k.data()), 32,
+                static_cast<uint64_t>(11 + L), "OCUI-KEY", kdfMaster);
+            if (rc != 0) { rcCascade = rc; }
+            layerKeys.append(k);
+        }
+    }
+
     sodium_memzero(kdfMaster, sizeof(kdfMaster));
 
-    if (rc1 != 0 || rc2 != 0) {
+    // Helper to wipe all cascade layer keys.
+    auto wipeLayerKeys = [&layerKeys]() {
+        for (QByteArray& k : layerKeys)
+            if (!k.isEmpty()) sodium_memzero(k.data(), k.size());
+    };
+
+    if (rc1 != 0 || rc2 != 0 || rcCascade != 0) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-            "V4 encrypt: crypto_kdf_derive_from_key failed for enc/sig keys");
+            "V4 encrypt: crypto_kdf_derive_from_key failed for enc/sig/cascade keys");
         sodium_memzero(encKey.data(), encKey.size());
         sodium_memzero(sigKey.data(), sigKey.size());
         sodium_memzero(outerKey.data(), outerKey.size());
+        wipeLayerKeys();
         return false;
     }
 
@@ -582,7 +655,7 @@ bool EncryptionEngine::cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFi
         ds << quint8(OCUI_FORMAT_VER_V4);
         ds << quint8(algId);
         ds << quint8(kId);
-        ds << quint8(0); // reserved
+        ds << quint8(cascadeId); // reserved byte carries the cascade recipe id (0 = none)
         ds << quint32(static_cast<quint32>(iterations));
         ds << quint32(static_cast<quint32>(OCUI_CHUNK_SIZE));
         ds << quint32(effectiveCount);
@@ -594,6 +667,7 @@ bool EncryptionEngine::cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFi
         sodium_memzero(encKey.data(), encKey.size());
         sodium_memzero(sigKey.data(), sigKey.size());
         sodium_memzero(outerKey.data(), outerKey.size());
+        wipeLayerKeys();
         return false;
     }
 
@@ -612,6 +686,7 @@ bool EncryptionEngine::cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFi
             sodium_memzero(encKey.data(), encKey.size());
             sodium_memzero(sigKey.data(), sigKey.size());
             sodium_memzero(outerKey.data(), outerKey.size());
+            wipeLayerKeys();
             return false;
         }
         QByteArray plain = (bytesRead > 0) ? readBuf.left(static_cast<int>(bytesRead))
@@ -622,21 +697,26 @@ bool EncryptionEngine::cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFi
             sodium_memzero(encKey.data(), encKey.size());
             sodium_memzero(sigKey.data(), sigKey.size());
             sodium_memzero(outerKey.data(), outerKey.size());
+            wipeLayerKeys();
             return false;
         }
 
-        QByteArray ct = encryptChunk(encKey, nonce, plain, algorithm);
+        QByteArray ct = isCascade
+            ? cascadeEncryptChunk(layerKeys, nonce, plain, cascade)
+            : encryptChunk(encKey, nonce, plain, algorithm);
         if (ct.isEmpty()) {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                QString("V4 encrypt: encryptChunk failed at chunk %1").arg(i));
+                QString("V4 encrypt: chunk encryption failed at chunk %1").arg(i));
             sodium_memzero(encKey.data(), encKey.size());
             sodium_memzero(sigKey.data(), sigKey.size());
             sodium_memzero(outerKey.data(), outerKey.size());
+            wipeLayerKeys();
             return false;
         }
         innerBuf.append(ct);
     }
     sodium_memzero(encKey.data(), encKey.size());
+    wipeLayerKeys();
 
     // -----------------------------------------------------------------------
     // Step 3: Sign the inner blob (everything so far) with Ed25519.
@@ -823,9 +903,34 @@ bool EncryptionEngine::cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFi
     int rc2 = crypto_kdf_derive_from_key(
         reinterpret_cast<unsigned char*>(sigKey.data()), crypto_sign_SEEDBYTES,
         2, "OCUI-SIG", kdfMaster);
+
+    // The caller's algorithm string tells us the expected cascade upfront, so
+    // we can derive the layer keys before wiping kdfMaster. The stored cascade
+    // id (inner reserved byte) is verified against this after the header parse.
+    const quint8 callerCascadeId = cascadeIdForAlgorithm(algorithm);
+    const QStringList cascade = cascadeRecipe(callerCascadeId);
+    const bool isCascade = !cascade.isEmpty();
+    QVector<QByteArray> layerKeys;
+    int rcCascade = 0;
+    if (isCascade) {
+        for (int L = 0; L < cascade.size(); ++L) {
+            QByteArray k(32, 0);
+            int rc = crypto_kdf_derive_from_key(
+                reinterpret_cast<unsigned char*>(k.data()), 32,
+                static_cast<uint64_t>(11 + L), "OCUI-KEY", kdfMaster);
+            if (rc != 0) rcCascade = rc;
+            layerKeys.append(k);
+        }
+    }
+    // Wipe layer keys on every exit path (many early returns below).
+    auto layerKeyGuard = qScopeGuard([&layerKeys]() {
+        for (QByteArray& k : layerKeys)
+            if (!k.isEmpty()) sodium_memzero(k.data(), k.size());
+    });
+
     sodium_memzero(kdfMaster, sizeof(kdfMaster));
 
-    if (rc1 != 0 || rc2 != 0) {
+    if (rc1 != 0 || rc2 != 0 || rcCascade != 0) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "V4 decrypt: subkey derivation failed");
         sodium_memzero(encKey.data(), encKey.size());
         sodium_memzero(sigKey.data(), sigKey.size());
@@ -981,6 +1086,19 @@ bool EncryptionEngine::cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFi
         return false;
     }
 
+    // Bind the cascade recipe: the stored cascade id (reserved byte) must match
+    // the one implied by the caller's algorithm string. This prevents a
+    // recipe-confusion / downgrade where a different chain is substituted.
+    if (innerRsv != callerCascadeId) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+            QString("V4 decrypt: cascade id mismatch (file=%1, expected=%2)")
+                .arg(innerRsv).arg(callerCascadeId));
+        sodium_memzero(encKey.data(), encKey.size());
+        sodium_memzero(sigKey.data(), sigKey.size());
+        sodium_memzero(innerBuf.data(), innerBuf.size());
+        return false;
+    }
+
     // Enforce PBKDF2 floor.
     if (innerKdfId == KDF_ID_PBKDF2 && innerIters < 600000) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
@@ -1093,9 +1211,12 @@ bool EncryptionEngine::cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFi
             return false;
         }
 
+        // A cascade adds one tag per layer, so a full chunk on disk is
+        // innerChunkSize + N*tag (vs +1*tag for a single cipher).
+        const int tagOverhead = (isCascade ? cascade.size() : 1) * OCUI_GCM_TAG_SIZE;
         qint64 toRead;
         if (i < innerChunkCnt - 1) {
-            toRead = static_cast<qint64>(innerChunkSize) + OCUI_GCM_TAG_SIZE;
+            toRead = static_cast<qint64>(innerChunkSize) + tagOverhead;
         } else {
             toRead = remaining;
         }
@@ -1118,8 +1239,17 @@ bool EncryptionEngine::cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFi
             return false;
         }
 
-        QByteArray plain = decryptChunk(encKey, nonce, raw, algorithm);
-        if (plain.isEmpty() && raw.size() > OCUI_GCM_TAG_SIZE) {
+        QByteArray plain;
+        bool chunkOk;
+        if (isCascade) {
+            plain = cascadeDecryptChunk(layerKeys, nonce, raw, cascade, &chunkOk);
+        } else {
+            plain = decryptChunk(encKey, nonce, raw, algorithm);
+            // Empty result is a real failure only if there was actual ciphertext
+            // beyond the single tag (an empty plaintext chunk is just the tag).
+            chunkOk = !(plain.isEmpty() && raw.size() > OCUI_GCM_TAG_SIZE);
+        }
+        if (!chunkOk) {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
                 QString("V4 decrypt: AEAD authentication FAILED at chunk %1").arg(i));
             sodium_memzero(encKey.data(), encKey.size());
