@@ -60,5 +60,33 @@ void TestOpenCryptUI::testContainerCreateOpen()
     int k3 = mainWindow->openContainerToFile(container, "totally-wrong", outBad, "Argon2", 3, &e3);
     QCOMPARE(k3, 0);
 
+    // --- Shamir share files: split the container password, recover from k ----
+    {
+        const QString pwToSplit = "outer-decoy-pw"; // the outer container password
+        const QString base = dir.filePath("share");
+        QStringList written; QString se;
+        bool sok = mainWindow->splitPasswordToShares(pwToSplit, 5, 3, base, &written, &se);
+        QVERIFY2(sok, se.toUtf8().constData());
+        QCOMPARE(written.size(), 5);
+        for (const QString& w : written) QVERIFY(QFile::exists(w));
+
+        // Recover from any 3 shares → original password → opens the container.
+        QString recovered; QString re;
+        bool rok = mainWindow->recoverPasswordFromShares(
+            {written[0], written[2], written[4]}, &recovered, &re);
+        QVERIFY2(rok, re.toUtf8().constData());
+        QCOMPARE(recovered, pwToSplit);
+
+        const QString outShared = dir.filePath("out_shared.bin");
+        QString oe;
+        int sk = mainWindow->openContainerToFile(container, recovered, outShared, "Argon2", 3, &oe);
+        QCOMPARE(sk, 1); // recovered password opens the outer volume
+
+        // Fewer than k shares must fail (no password recovered).
+        QString r2;
+        bool rok2 = mainWindow->recoverPasswordFromShares({written[0], written[1]}, &r2, &re);
+        QVERIFY(!rok2);
+    }
+
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Container create/open test passed");
 }

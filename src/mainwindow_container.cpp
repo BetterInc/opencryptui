@@ -8,6 +8,7 @@
 #include "ui_mainwindow.h"
 #include "deniable_container.h"
 #include "encryptionengine.h"
+#include "shamir.h"
 #include "logging/secure_logger.h"
 #include <QFile>
 #include <QFileDialog>
@@ -93,6 +94,68 @@ int MainWindow::openContainerToFile(const QString& containerPath, const QString&
 }
 
 // ---------------------------------------------------------------------------
+// Shamir password-share files
+// ---------------------------------------------------------------------------
+bool MainWindow::splitPasswordToShares(const QString& password, int n, int k,
+                                       const QString& baseFilePath,
+                                       QStringList* writtenFiles, QString* error)
+{
+    auto setErr = [&](const QString& m){ if (error) *error = m; return false; };
+    QByteArray secret = password.toUtf8();
+    Shamir::SplitResult sr = Shamir::split(secret, n, k);
+    sodium_memzero(secret.data(), secret.size());
+    if (!sr.ok) return setErr(sr.error);
+
+    QStringList out;
+    for (int i = 0; i < sr.shares.size(); ++i) {
+        const QString path = QString("%1.%2.share").arg(baseFilePath).arg(i + 1);
+        QFile f(path);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            for (const QString& w : out) QFile::remove(w); // roll back
+            return setErr("Cannot write share file: " + path);
+        }
+        f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner); // 0600
+        // Human-readable header + base64 share. The threshold is advisory text;
+        // recovery succeeds once enough valid shares are supplied (checksum-verified).
+        f.write(QString("# OpenCryptUI key share %1 of %2 (need %3 to recover)\n")
+                    .arg(i + 1).arg(n).arg(k).toUtf8());
+        f.write(sr.shares[i].toBase64());
+        f.write("\n");
+        f.close();
+        out << path;
+    }
+    if (writtenFiles) *writtenFiles = out;
+    return true;
+}
+
+bool MainWindow::recoverPasswordFromShares(const QStringList& shareFiles,
+                                           QString* password, QString* error)
+{
+    auto setErr = [&](const QString& m){ if (error) *error = m; return false; };
+    QVector<QByteArray> shares;
+    for (const QString& path : shareFiles) {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly)) return setErr("Cannot read share file: " + path);
+        // Take the last non-comment, non-empty line as the base64 share.
+        QByteArray b64;
+        for (const QByteArray& line : f.readAll().split('\n')) {
+            const QByteArray t = line.trimmed();
+            if (t.isEmpty() || t.startsWith('#')) continue;
+            b64 = t;
+        }
+        f.close();
+        QByteArray share = QByteArray::fromBase64(b64);
+        if (share.isEmpty()) return setErr("Share file is empty or malformed: " + path);
+        shares.append(share);
+    }
+    Shamir::CombineResult cr = Shamir::combine(shares);
+    if (!cr.ok) return setErr(cr.error);
+    if (password) *password = QString::fromUtf8(cr.secret);
+    sodium_memzero(cr.secret.data(), cr.secret.size());
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Helpers for the dialogs
 // ---------------------------------------------------------------------------
 // Build a "[lineedit] [Browse…]" row; returns the container widget and writes
@@ -157,6 +220,17 @@ void MainWindow::on_actionCreateContainer_triggered()
     setHiddenVisible(false);
     connect(useHidden, &QCheckBox::toggled, &dlg, [=, &dlg](bool v){ setHiddenVisible(v); dlg.adjustSize(); });
 
+    // Optional: split the outer password into Shamir key shares.
+    QCheckBox* useShares = new QCheckBox("Split the outer password into key shares (k of n)", &dlg);
+    form->addRow(useShares);
+    QSpinBox* nSpin = new QSpinBox(&dlg); nSpin->setRange(2, 255); nSpin->setValue(5);
+    QSpinBox* kSpin = new QSpinBox(&dlg); kSpin->setRange(2, 255); kSpin->setValue(3);
+    QLabel* nLabel = new QLabel("Total shares (n):"); QLabel* kLabel = new QLabel("Needed to recover (k):");
+    form->addRow(nLabel, nSpin); form->addRow(kLabel, kSpin);
+    auto setSharesVisible = [=](bool v){ nSpin->setVisible(v); kSpin->setVisible(v); nLabel->setVisible(v); kLabel->setVisible(v); };
+    setSharesVisible(false);
+    connect(useShares, &QCheckBox::toggled, &dlg, [=, &dlg](bool v){ setSharesVisible(v); dlg.adjustSize(); });
+
     QDialogButtonBox* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     form->addRow(bb);
     connect(bb, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -186,11 +260,27 @@ void MainWindow::on_actionCreateContainer_triggered()
         [&prog](int pct){ prog.setValue(pct); QApplication::processEvents(); });
 
     prog.setValue(100);
-    if (ok) QMessageBox::information(this, "Container created",
+    if (!ok) { QMessageBox::critical(this, "Create failed", err); return; }
+
+    QString shareMsg;
+    if (useShares->isChecked()) {
+        if (kSpin->value() > nSpin->value()) {
+            QMessageBox::warning(this, "Shares", "k cannot exceed n; shares not written.");
+        } else {
+            QStringList written; QString serr;
+            if (splitPasswordToShares(outerPw->text(), nSpin->value(), kSpin->value(),
+                                      containerEdit->text(), &written, &serr)) {
+                shareMsg = QString("\n\nOuter password split into %1 share files (any %2 recover it):\n%3")
+                               .arg(written.size()).arg(kSpin->value()).arg(written.join("\n"));
+            } else {
+                shareMsg = "\n\n(Warning: could not write key shares: " + serr + ")";
+            }
+        }
+    }
+    QMessageBox::information(this, "Container created",
         "Encrypted container created.\n\nThe outer password opens the decoy volume; "
         "the hidden password (if set) opens the real one. The two are "
-        "indistinguishable without the hidden password.");
-    else    QMessageBox::critical(this, "Create failed", err);
+        "indistinguishable without the hidden password." + shareMsg);
 }
 
 void MainWindow::on_actionOpenContainer_triggered()
@@ -202,7 +292,23 @@ void MainWindow::on_actionOpenContainer_triggered()
     dlg.setWindowTitle("Open Encrypted Container");
     QFormLayout* form = new QFormLayout(&dlg);
     QLineEdit* pw = new QLineEdit(&dlg); pw->setEchoMode(QLineEdit::Password);
-    form->addRow("Password:", pw);
+    QWidget* pwRow = new QWidget(&dlg); QHBoxLayout* pwh = new QHBoxLayout(pwRow); pwh->setContentsMargins(0,0,0,0);
+    QPushButton* fromShares = new QPushButton("From shares…", pwRow);
+    pwh->addWidget(pw); pwh->addWidget(fromShares);
+    form->addRow("Password:", pwRow);
+    // Recover the password from k share files and fill the field.
+    connect(fromShares, &QPushButton::clicked, &dlg, [this, pw, &dlg]{
+        QStringList files = QFileDialog::getOpenFileNames(&dlg, "Select key share files (need k)",
+                                                          QString(), "Key shares (*.share);;All files (*)");
+        if (files.isEmpty()) return;
+        QString recovered, rerr;
+        if (recoverPasswordFromShares(files, &recovered, &rerr)) {
+            pw->setText(recovered);
+            QMessageBox::information(&dlg, "Shares", QString("Recovered the password from %1 shares.").arg(files.size()));
+        } else {
+            QMessageBox::warning(&dlg, "Shares", "Could not recover: " + rerr);
+        }
+    });
     QLineEdit* extractEdit = nullptr;
     form->addRow("Extract to:", makePathRow(&dlg, this, "Extract contents to", true, &extractEdit));
     QDialogButtonBox* bb = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);

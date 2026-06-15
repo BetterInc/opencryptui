@@ -55,6 +55,15 @@ public:
                             const QString& extractTo, const QString& kdf, int iterations,
                             QString* error);
 
+    // Shamir share files: split a password into n base64 share files (k needed
+    // to recover) at <baseFilePath>.1.share … .n.share, and recover a password
+    // from any sufficient set of share files. Factored out for testing.
+    bool splitPasswordToShares(const QString& password, int n, int k,
+                               const QString& baseFilePath,
+                               QStringList* writtenFiles, QString* error);
+    bool recoverPasswordFromShares(const QStringList& shareFiles,
+                                   QString* password, QString* error);
+
 private slots:
     void workerFinished(const QString &result, bool success, bool isFile);
     void updateProgress(int value);
