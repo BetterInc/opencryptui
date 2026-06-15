@@ -323,6 +323,13 @@ if(OCUI_ENABLE_FUSE)
     target_compile_options(opencryptui-mount PRIVATE ${ENGINE_HARDENING_CFLAGS} ${ENGINE_HARDENING_FORTIFY})
     target_link_options(opencryptui-mount PRIVATE ${ENGINE_HARDENING_LFLAGS})
     message(STATUS "FUSE mount driver: ENABLED (fuse3 ${FUSE3_VERSION})")
+
+    # Real end-to-end mount test: create → mount → write → read → verify no
+    # plaintext on disk → unmount → remount (persistence) → wrong-password.
+    # Skips (not fails) when /dev/fuse is unavailable (return code 77).
+    add_test(NAME FuseMountE2E
+             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuse_mount_e2e.sh $<TARGET_FILE:opencryptui-mount>)
+    set_tests_properties(FuseMountE2E PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
 endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
