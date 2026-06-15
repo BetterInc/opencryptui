@@ -137,9 +137,17 @@ public:
     // OWASP / NIST baseline floors. Public so the UI can pin spinbox
     // minimums to the same value the engine enforces — keeping UI and engine
     // in lock-step prevents the "user picks N, engine silently runs M" lie.
+    //
+    // Scrypt's floor is the libsodium scryptsalsa208sha256 *opslimit*. The old
+    // 16384 floor computed in ~1.7 ms — far too weak (an attacker got ~600
+    // guesses/sec). 2097152 (2^21) lands ~100 ms at the INTERACTIVE memlimit,
+    // a ~60x increase, putting Scrypt's real cost in the same league as
+    // Argon2/PBKDF2. NOTE: raising this is intentionally a breaking change for
+    // any file previously encrypted with Scrypt at the old opslimit — those
+    // used a different derived key and predate any release.
     static int iterationFloorForKdf(const QString& kdf) {
         if (kdf == "Argon2") return 3;
-        if (kdf == "Scrypt") return 16384;
+        if (kdf == "Scrypt") return 2097152; // 2^21 opslimit ≈ 100 ms
         if (kdf == "PBKDF2") return 600000;
         return 1;
     }

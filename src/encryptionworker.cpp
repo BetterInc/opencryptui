@@ -266,10 +266,12 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
     // salt must be exactly 32 bytes: libsodium's crypto_pwhash_scryptsalsa208sha256
     // reads SALTBYTES (32) unconditionally — a shorter buffer is a heap overread.
     QByteArray salt(32, 'S');
-    // Use minimum viable iterations per KDF so the benchmark finishes quickly
-    // and does not allocate enormous amounts of RAM (Argon2 uses 1 GiB at m_cost=1<<20).
-    // PBKDF2 floor is enforced by calculateSecureIterations, so pass the floor directly.
-    int iterations = (kdf == "PBKDF2") ? 600000 : (kdf == "Argon2") ? 3 : 16384;
+    // Benchmark each KDF at its enforced security floor — the weakest config a
+    // user could actually pick — so the measured cost reflects real-world worst
+    // case. Sourced from EncryptionEngine::iterationFloorForKdf so the benchmark
+    // can never drift from the engine's enforced floors (Argon2=3,
+    // Scrypt=2097152 opslimit, PBKDF2=600000).
+    int iterations = EncryptionEngine::iterationFloorForKdf(kdf);
 
     QElapsedTimer timer;
     timer.start();

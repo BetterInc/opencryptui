@@ -71,13 +71,12 @@ MainWindow::MainWindow(QWidget *parent)
     // primitives, then speed last. Speed is a tiebreaker, never the headline —
     // and for KDFs a faster result is actively worse (lower attacker cost).
     ui->benchmarkTable->setColumnCount(6);
-    // "KDF Cost" rather than "Iterations": the value means a DIFFERENT thing
-    // per KDF (Argon2 time-cost passes, Scrypt N, PBKDF2 iterations) and is
-    // NOT comparable across KDFs. Argon2's 3 and PBKDF2's 600000 are both the
-    // secure floor for their respective algorithm — the small number is not
-    // "weaker". Tooltip + the column itself make that explicit so nobody reads
-    // "fewer = weaker".
-    QStringList headers = {"Security", "Cipher", "KDF", "MB/s", "ms", "KDF Cost"};
+    // Last column is the ATTACKER's brute-force rate derived from the measured
+    // KDF time — the security-meaningful number. Lower = better (the attacker
+    // gets fewer password guesses per second). This replaces the old raw
+    // "KDF Cost" column, whose per-KDF parameters (Argon2 t=3 vs Scrypt N vs
+    // PBKDF2 600000) weren't comparable and read backwards ("3 = strong?").
+    QStringList headers = {"Security", "Cipher", "KDF", "MB/s", "ms", "Guesses/s ↓"};
     ui->benchmarkTable->setHorizontalHeaderLabels(headers);
     ui->benchmarkTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(0)) {
@@ -88,22 +87,18 @@ MainWindow::MainWindow(QWidget *parent)
             "strongest; unauthenticated modes (CTR/CBC) and smaller keys rank "
             "lower; Camellia lowest.\n"
             "  • KDF: Argon2id (memory-hard) > Scrypt (memory-hard) > PBKDF2.\n"
-            "The tier does NOT depend on the KDF Cost number — that value isn't "
-            "comparable across KDFs.\n"
-            "Speed only breaks ties between equally-secure rows. For a KDF a "
-            "HIGHER ms means a stronger work factor.");
+            "Speed only breaks ties between equally-secure rows.");
     }
     if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(5)) {
         hdr->setToolTip(
-            "KDF-specific work parameter — NOT comparable across KDFs and NOT "
-            "a factor in the Security tier:\n"
-            "  • Argon2: time-cost passes (security comes mostly from its 1 GiB "
-            "memory cost, so 3 passes is the strong baseline)\n"
-            "  • Scrypt: the N cost parameter (16,384 floor)\n"
-            "  • PBKDF2: SHA-512 iterations — needs 600,000+ precisely because "
-            "each one is cheap and there's no memory cost\n"
-            "A small number here does not mean weaker; look at the Security "
-            "column and the ms (actual cost on this hardware).");
+            "Approximate password guesses/sec an attacker gets on ONE CPU core "
+            "against this KDF (≈ 1000 / KDF-ms). LOWER IS BETTER.\n"
+            "Caveat: this is the TIME axis only — it does NOT capture memory-"
+            "hardness. PBKDF2's time is fully GPU/ASIC-parallelizable (cheap to "
+            "run thousands of cores), while Argon2/Scrypt force each guess "
+            "through memory, defeating that. So a memory-hard KDF can show a "
+            "higher CPU rate here yet still rank above PBKDF2 — the Security "
+            "column is the combined judgement; this is just one input to it.");
     }
 
     // Enable sorting, then default to Security descending so the strongest
@@ -294,9 +289,9 @@ void MainWindow::applyKdfIterationFloor(const QString &kdf, QSpinBox *spinBox)
             "not iteration count. 3 is the OWASP-recommended baseline.");
     } else if (kdf == QLatin1String("Scrypt")) {
         tip = QStringLiteral(
-            "Scrypt cost parameter N. Minimum 16,384 — Scrypt's security comes "
-            "from memory-hardness; values below this offer no meaningful "
-            "protection against GPU/ASIC attackers.");
+            "Scrypt opslimit (work factor). Minimum 2,097,152 — lands ~100 ms "
+            "of real work; lower values (the old 16,384 floor computed in ~1 ms) "
+            "offer no meaningful protection against GPU/ASIC brute-forcing.");
     } else if (kdf == QLatin1String("PBKDF2")) {
         tip = QStringLiteral(
             "PBKDF2 iteration count. Minimum 600,000 (OWASP 2023 for SHA-256/512). "
@@ -574,12 +569,21 @@ void MainWindow::updateBenchmarkTable(int iterations, double mbps, double ms, co
                                           : QColor(0xc0, 0x39, 0x2b);
     secItem->setForeground(tierColor);
 
+    // Attacker brute-force rate ≈ guesses/sec against the KDF (1000 / ms,
+    // single core). Lower is better; this is the real cross-KDF-comparable
+    // security signal and orders the same way as the tier. iterations isn't
+    // shown anymore — it was the misleading non-comparable raw parameter.
+    const double guessesPerSec = (ms > 0.0) ? (1000.0 / ms) : 0.0;
+    const QString guessText = (guessesPerSec >= 100.0)
+        ? QString::number(guessesPerSec, 'f', 0)
+        : QString::number(guessesPerSec, 'f', 1);
+
     ui->benchmarkTable->setItem(row, 0, secItem);
     ui->benchmarkTable->setItem(row, 1, new QTableWidgetItem(cipher));
     ui->benchmarkTable->setItem(row, 2, new QTableWidgetItem(kdf));
     ui->benchmarkTable->setItem(row, 3, new SortKeyItem(QString::number(mbps, 'f', 2), mbps));
     ui->benchmarkTable->setItem(row, 4, new SortKeyItem(QString::number(ms, 'f', 2), ms));
-    ui->benchmarkTable->setItem(row, 5, new SortKeyItem(QString::number(iterations), iterations));
+    ui->benchmarkTable->setItem(row, 5, new SortKeyItem(guessText, guessesPerSec));
 
     ui->benchmarkTable->setSortingEnabled(wasSorting);
     // Keep the strongest configuration pinned to the top after each new row.
