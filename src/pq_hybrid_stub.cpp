@@ -1,4 +1,4 @@
-// pq_hybrid_stub.cpp — Always-compiled stub for PqHybrid when liboqs is absent.
+// pq_hybrid_stub.cpp - Always-compiled stub for PqHybrid when liboqs is absent.
 //
 // When OCUI_HAVE_LIBOQS is defined, pq_hybrid.cpp provides the real
 // implementations and this file must NOT be compiled (otherwise the linker will
@@ -32,7 +32,7 @@ HybridWrappedKey wrap(const QByteArray& /*dek*/,
                       const QByteArray& /*classicalPublic*/,
                       const QByteArray& /*pqPublic*/)
 {
-    qWarning() << "PqHybrid::wrap: PQ disabled in this build — returning empty blob. "
+    qWarning() << "PqHybrid::wrap: PQ disabled in this build - returning empty blob. "
                   "See docs/PQ_README.md.";
     return HybridWrappedKey{};
 }
@@ -42,7 +42,7 @@ QByteArray unwrap(const HybridWrappedKey& /*blob*/,
                   const QByteArray& /*pqSecret*/,
                   QString* errorOut)
 {
-    const char* msg = "PqHybrid::unwrap: PQ disabled in this build — cannot unwrap. "
+    const char* msg = "PqHybrid::unwrap: PQ disabled in this build - cannot unwrap. "
                       "See docs/PQ_README.md.";
     qWarning() << msg;
     if (errorOut)

@@ -267,10 +267,10 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
     const int ivSize = algorithm.contains("GCM") || algorithm == "ChaCha20-Poly1305" ? 12 : 16;
     QByteArray iv(ivSize, 'I');
     // salt must be exactly 32 bytes: libsodium's crypto_pwhash_scryptsalsa208sha256
-    // reads SALTBYTES (32) unconditionally — a shorter buffer is a heap overread.
+    // reads SALTBYTES (32) unconditionally - a shorter buffer is a heap overread.
     QByteArray salt(32, 'S');
-    // Benchmark each KDF at its enforced security floor — the weakest config a
-    // user could actually pick — so the measured cost reflects real-world worst
+    // Benchmark each KDF at its enforced security floor - the weakest config a
+    // user could actually pick - so the measured cost reflects real-world worst
     // case. Sourced from EncryptionEngine::iterationFloorForKdf so the benchmark
     // can never drift from the engine's enforced floors (Argon2=3,
     // Scrypt=2097152 opslimit, PBKDF2=600000).
@@ -288,7 +288,7 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
 
     // ---- Measurement 1: KDF cost (the SECURITY signal) -------------------
     // This is the one-time "unlock" time and, crucially, the per-guess cost
-    // an attacker pays. Timed ALONE — mixing it into the throughput number is
+    // an attacker pays. Timed ALONE - mixing it into the throughput number is
     // exactly what made the old benchmark unreadable (a slow Argon2 made the
     // cipher look slow when it wasn't).
     QElapsedTimer kdfTimer;
@@ -394,13 +394,13 @@ void EncryptionWorker::benchmarkCipher(const QString &algorithm, const QString &
 
     // Signal carries: (iterations, cipher MB/s, KDF ms, cipher, kdf).
     // NOTE the second arg is now pure cipher throughput and the third is the
-    // KDF-only time — the UI separates "Speed" from "Unlock"/crack-resistance.
+    // KDF-only time - the UI separates "Speed" from "Unlock"/crack-resistance.
     emit benchmarkResultReady(iterations, throughput, kdfMs, algorithm, kdf);
 }
 
 EncryptionWorker::~EncryptionWorker()
 {
-    // m_password / m_hiddenPassword are SecureString now — their destructors
+    // m_password / m_hiddenPassword are SecureString now - their destructors
     // run when the worker is destroyed and reliably zero + munlock the
     // mlocked buffer. Nothing to do here.
 }

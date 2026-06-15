@@ -1,6 +1,6 @@
 // Shared include set for the tests/test_ui_*.cpp files. Each of those
 // TUs defines methods on TestOpenCryptUI (declared in
-// tests/test_encryption_app.h) — they all need the same Qt + Widgets
+// tests/test_encryption_app.h) - they all need the same Qt + Widgets
 // headers so pulling the common block into one header keeps the .cpp
 // files focused on test logic.
 #ifndef TESTS_TEST_UI_COMMON_H

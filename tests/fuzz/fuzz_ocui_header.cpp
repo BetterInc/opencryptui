@@ -11,7 +11,7 @@
 // mutation the fuzzer generates.
 //
 // Invariant: decryptFile MUST NOT crash regardless of input.  Return value
-// (true/false) is not checked — garbage input is expected to fail; what we
+// (true/false) is not checked - garbage input is expected to fail; what we
 // forbid is a crash, assertion, or sanitizer finding.
 //
 // Temp-file strategy: reuse a single path per process to avoid creating and
@@ -28,7 +28,7 @@
 #include <cstring>
 
 // ---------------------------------------------------------------------------
-// Global state — initialised once, reused across all LLVMFuzzerTestOneInput
+// Global state - initialised once, reused across all LLVMFuzzerTestOneInput
 // invocations within the same process (fuzzer runs many iterations in one
 // process lifetime).
 // ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ static void ensureInit()
 }
 
 // ---------------------------------------------------------------------------
-// LLVMFuzzerTestOneInput — called by the fuzzer for every generated input.
+// LLVMFuzzerTestOneInput - called by the fuzzer for every generated input.
 // ---------------------------------------------------------------------------
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {
@@ -110,7 +110,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
     // and signature verification, stressing deeper paths.
     for (int i = 0; i < g_nCombos; ++i) {
         const AlgoKdf& c = g_combos[i];
-        // decryptFile returns false for malformed input — that is expected and
+        // decryptFile returns false for malformed input - that is expected and
         // not an error.  What we must not see is a crash or sanitizer finding.
         (void) g_eng->decryptFile(
             g_tmpPath,

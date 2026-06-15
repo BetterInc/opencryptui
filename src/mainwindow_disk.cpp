@@ -608,7 +608,7 @@ void MainWindow::on_diskDecryptButton_clicked()
     
     // Set parameters and start work
     worker->setDiskParameters(diskPath, password, algorithm, kdf, iterations, useHMAC, false, keyfilePaths);
-    // See note in on_diskEncryptButton_clicked — drop the local QString
+    // See note in on_diskEncryptButton_clicked - drop the local QString
     // password and clear the QLineEdit; worker holds the SecureString copy.
     password.fill(QChar('\0'));
     password.clear();

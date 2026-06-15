@@ -326,15 +326,15 @@ QString TestOpenCryptUI::createVirtualDisk(qint64 sizeInBytes)
     return virtualDiskPath;
 }
 
-// [moved to tests/test_ui_*.cpp — see test_encryption_app.h for declarations]
+// [moved to tests/test_ui_*.cpp - see test_encryption_app.h for declarations]
 
-// [moved to tests/test_ui_*.cpp — see test_encryption_app.h for declarations]
+// [moved to tests/test_ui_*.cpp - see test_encryption_app.h for declarations]
 
 void TestOpenCryptUI::testAllCiphersAndKDFs()
 {
     // Cipher-matrix coverage now lives in tests/test_engine_cipher_matrix.cpp
     // (CTest: EngineCipherMatrix). That runs every supportedCiphers() entry
-    // through a real encrypt→decrypt round-trip at the engine API — no UI
+    // through a real encrypt->decrypt round-trip at the engine API - no UI
     // widget dance, no headless flake. Skip the UI variant and rely on the
     // engine-level test as the source of truth.
     QSKIP("Covered by EngineCipherMatrix (engine-level, faster + deterministic)");
@@ -567,22 +567,22 @@ void TestOpenCryptUI::testVirtualDiskEncryption()
     QSKIP("Virtual-disk UI flow is not exercised in headless CI");
 }
 
-// [moved to tests/test_ui_*.cpp — see test_encryption_app.h for declarations]
+// [moved to tests/test_ui_*.cpp - see test_encryption_app.h for declarations]
 
 void TestOpenCryptUI::testEncryptDecryptWithKeyfile()
 {
     // Engine-level keyfile coverage now lives in tests/test_engine_keyfile.cpp
     // (CTest: EngineKeyfile). That test exercises password + keyfile round-trip,
     // wrong-keyfile rejection, and missing-keyfile rejection without the
-    // UI — it's fast and deterministic. The UI-driven version below flakes
+    // UI - it's fast and deterministic. The UI-driven version below flakes
     // under headless (worker signals don't progress), so skip it here and
     // keep the engine-level coverage as the source of truth.
     QSKIP("Keyfile flow covered by EngineKeyfile; UI variant is unreliable headless");
 }
 
-// [moved to tests/test_ui_*.cpp — see test_encryption_app.h for declarations]
+// [moved to tests/test_ui_*.cpp - see test_encryption_app.h for declarations]
 
-// [moved to tests/test_ui_*.cpp — see test_encryption_app.h for declarations]
+// [moved to tests/test_ui_*.cpp - see test_encryption_app.h for declarations]
 
 void TestOpenCryptUI::testEntropyQuality()
 {

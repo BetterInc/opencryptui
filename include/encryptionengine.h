@@ -43,7 +43,7 @@ public:
     QString currentProvider() const;
     QStringList availableProviders() const;
 
-    // QString password overloads — convenience wrappers for callers that
+    // QString password overloads - convenience wrappers for callers that
     // already hold the password as a QString (tests, legacy code, the
     // benchmark path). They allocate a SecureString, copy in the UTF-8
     // bytes, and delegate to the SecureString overload below. The
@@ -54,7 +54,7 @@ public:
     bool encryptFolder(const QString& folderPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
     bool decryptFolder(const QString& folderPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
 
-    // SecureString password overloads — the real implementations. The
+    // SecureString password overloads - the real implementations. The
     // mlocked + zero-on-destroy SecureString flows through cryptOperation
     // and into deriveKey without spawning extra QString copies. Use these
     // from the worker / UI layer where the password is long-lived and
@@ -73,7 +73,7 @@ public:
     bool verifyOutputPathSecurity(const QString& filePath);
     bool checkAndFixFilePermissions(const QString& filePath, QFileDevice::Permissions desiredPermissions);
     
-    // Disk encryption methods (QString wrappers + SecureString reals — see file ops above).
+    // Disk encryption methods (QString wrappers + SecureString reals - see file ops above).
     bool encryptDisk(const QString& diskPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QStringList& keyfilePaths = QStringList());
     bool decryptDisk(const QString& diskPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QStringList& keyfilePaths = QStringList());
     bool encryptDisk(const QString& diskPath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QStringList& keyfilePaths = QStringList());
@@ -124,7 +124,7 @@ public:
                                    const QByteArray& cipherChunkWithTag, const QString& algorithm);
 
     // Key derivation entry points.
-    // QString variant: thin wrapper — converts to SecureString and delegates.
+    // QString variant: thin wrapper - converts to SecureString and delegates.
     // SecureString variant: the real implementation. Performs the keyfile
     // HMAC mixing, calls performKeyDerivation, returns the derived key.
     QByteArray deriveKey(const QString& password, const QByteArray& salt, const QStringList& keyfilePaths, const QString& kdf, int iterations);
@@ -157,19 +157,19 @@ public:
     QString lastError() const { return m_lastError; }
 
     // OWASP / NIST baseline floors. Public so the UI can pin spinbox
-    // minimums to the same value the engine enforces — keeping UI and engine
+    // minimums to the same value the engine enforces - keeping UI and engine
     // in lock-step prevents the "user picks N, engine silently runs M" lie.
     //
     // Scrypt's floor is the libsodium scryptsalsa208sha256 *opslimit*. The old
-    // 16384 floor computed in ~1.7 ms — far too weak (an attacker got ~600
+    // 16384 floor computed in ~1.7 ms - far too weak (an attacker got ~600
     // guesses/sec). 2097152 (2^21) lands ~100 ms at the INTERACTIVE memlimit,
     // a ~60x increase, putting Scrypt's real cost in the same league as
     // Argon2/PBKDF2. NOTE: raising this is intentionally a breaking change for
-    // any file previously encrypted with Scrypt at the old opslimit — those
+    // any file previously encrypted with Scrypt at the old opslimit - those
     // used a different derived key and predate any release.
     static int iterationFloorForKdf(const QString& kdf) {
         if (kdf == "Argon2") return 3;
-        if (kdf == "Scrypt") return 2097152; // 2^21 opslimit ≈ 100 ms
+        if (kdf == "Scrypt") return 2097152; // 2^21 opslimit ~ 100 ms
         if (kdf == "PBKDF2") return 600000;
         return 1;
     }
@@ -193,7 +193,7 @@ private:
     //   for each chunk i: [ciphertext chunk_size bytes (or less for last)][tag 16 bytes]
     //   [sig trailer]
     //
-    // v4 on-disk layout (AEAD only, deniable — no plaintext magic):
+    // v4 on-disk layout (AEAD only, deniable - no plaintext magic):
     //   [salt 32][outer_iv 12][outer_ciphertext + 16-byte outer GCM tag]
     //
     //   outer_ciphertext decrypts (AES-256-GCM, outer key) to an inner blob:
@@ -288,8 +288,8 @@ private:
     //   - Writes: salt(32) || outer_iv(12) || outer_ciphertext+tag to outputFile.
     // cryptOperationV4Decrypt:
     //   - Reads salt(32) || outer_iv(12) from file offset 0.
-    //   - Derives master → outer key.
-    //   - Decrypts outer AEAD → inner payload buffer.
+    //   - Derives master -> outer key.
+    //   - Decrypts outer AEAD -> inner payload buffer.
     //   - Parses inner OCUI v4 header, verifies Ed25519, decrypts chunks.
     //   Returns true on success; false means wrong password OR not v4 format.
     bool cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFile,

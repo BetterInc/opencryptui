@@ -45,14 +45,14 @@ int main(int argc, char** argv)
         check(c3.ok && c3.secret == secret, "all 5 shares reconstruct");
     }
 
-    // Fewer than k → must FAIL (checksum), not return garbage.
+    // Fewer than k -> must FAIL (checksum), not return garbage.
     {
         auto c = Shamir::combine(pick(sp.shares, {0,1}));
         check(!c.ok, "2 of 3-of-5 is rejected (below threshold)");
         check(c.secret.isEmpty(), "no secret leaked on sub-threshold combine");
     }
 
-    // A corrupted share among k → rejected.
+    // A corrupted share among k -> rejected.
     {
         auto shares = pick(sp.shares, {0,1,2});
         shares[1][5] = shares[1][5] ^ 0x80; // flip a byte in a y-value
@@ -60,7 +60,7 @@ int main(int argc, char** argv)
         check(!c.ok, "corrupted share is rejected");
     }
 
-    // Duplicate share → rejected.
+    // Duplicate share -> rejected.
     {
         auto c = Shamir::combine(pick(sp.shares, {2,2,3}));
         check(!c.ok, "duplicate share is rejected");

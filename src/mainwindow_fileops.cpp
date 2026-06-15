@@ -213,7 +213,7 @@ void MainWindow::startWorker(bool encrypt, bool isFile)
     }
 
     // Set parameters and start work. After this call the worker holds the
-    // password in an mlocked SecureString — we drop the local QString and
+    // password in an mlocked SecureString - we drop the local QString and
     // clear the QLineEdit so Qt's internal buffer for the visible field is
     // also zeroed. The local QString and the QLineEdit's internal QString
     // are still implicit-shared copies we can't fully reach, but clearing

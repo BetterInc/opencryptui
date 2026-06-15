@@ -1,6 +1,6 @@
 // On-disk encryption-header I/O for DiskOperations.
 // Extracted from encryptionengine_diskops.cpp so the info/discovery path
-// (getAvailableDisks, formatDiskSize, sector math, …) stays focused and
+// (getAvailableDisks, formatDiskSize, sector math, ...) stays focused and
 // doesn't carry the header-format churn. No behaviour change.
 #include "encryptionengine_diskops.h"
 #include "encryptionengine.h"

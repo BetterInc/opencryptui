@@ -2,20 +2,20 @@
 //
 // Why a new format (not the disk JSON header): the disk header stores a
 // plaintext "magic" + "hasHiddenVolume" flag, which announces both that the
-// volume is encrypted AND that a hidden volume exists — fatal for deniability.
+// volume is encrypted AND that a hidden volume exists - fatal for deniability.
 // A deniable container must be indistinguishable from random data end to end.
 //
 // On-disk layout (fixed-size file of N bytes, every byte random/ciphertext):
 //
 //   [0 .. 64KiB)        outer header slot   (always present)
 //   [64KiB .. 128KiB)   hidden header slot  (always present; random if no
-//                                            hidden volume — indistinguishable
+//                                            hidden volume - indistinguishable
 //                                            from an encrypted hidden header)
 //   [128KiB .. N)       data area
 //                         outer volume data grows from 128KiB forward
 //                         hidden volume data sits at the TAIL (end backward)
 //
-// Each header slot: salt(32) ‖ nonce(12) ‖ AES-256-GCM(headerPlaintext)+tag,
+// Each header slot: salt(32) || nonce(12) || AES-256-GCM(headerPlaintext)+tag,
 // then random padding to fill the 64KiB slot. The salt/nonce are random and
 // the ciphertext is indistinguishable from random, so the whole slot looks
 // like noise. headerKey = deriveKey(password, salt). A password "opens" a
@@ -28,7 +28,7 @@
 // byte-for-byte indistinguishable to anyone without the hidden password.
 //
 // NOTE: this is a file/blob container (decrypt-to-extract), not yet a mounted
-// filesystem — mounting is a separate feature built on top of this.
+// filesystem - mounting is a separate feature built on top of this.
 #ifndef OPENCRYPTUI_DENIABLE_CONTAINER_H
 #define OPENCRYPTUI_DENIABLE_CONTAINER_H
 
@@ -79,7 +79,7 @@ public:
                        const ProgressFn& progress = {});
 
     // Open with a password. Which volume you get is determined solely by which
-    // header slot the password validates — the outer password yields the outer
+    // header slot the password validates - the outer password yields the outer
     // (decoy) volume, the hidden password yields the hidden volume.
     static OpenResult open(EncryptionEngine& eng, const QString& path,
                            const QString& password,

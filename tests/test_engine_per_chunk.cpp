@@ -3,14 +3,14 @@
 // Per-chunk AEAD framing tests for OCUI v3 format.
 //
 // Test cases:
-//   1. 10 MiB round-trip   — verifies multi-chunk encrypt/decrypt integrity.
-//   2. Naive tamper        — flip a byte in chunk 3 ciphertext; outer Ed25519
+//   1. 10 MiB round-trip   - verifies multi-chunk encrypt/decrypt integrity.
+//   2. Naive tamper        - flip a byte in chunk 3 ciphertext; outer Ed25519
 //                            signature catches it before AEAD runs.
-//   3. Attacker-resigns    — tamper chunk 3 and recompute the Ed25519 trailer
+//   3. Attacker-resigns    - tamper chunk 3 and recompute the Ed25519 trailer
 //                            (attacker knows the signing key); AEAD rejects that
 //                            specific chunk and no plaintext is left on disk.
-//   4. Sub-chunk file      — file smaller than one chunk (edge case).
-//   5. Exact 2 MiB file   — file exactly 2 chunks, no partial tail chunk.
+//   4. Sub-chunk file      - file smaller than one chunk (edge case).
+//   5. Exact 2 MiB file   - file exactly 2 chunks, no partial tail chunk.
 
 #include "encryptionengine.h"
 #include <QCoreApplication>
@@ -281,7 +281,7 @@ static int tc1_roundtrip10MiB(EncryptionEngine& eng, const QString& dir)
     return 0;
 }
 
-// TC2: Naive tamper — flip a byte in chunk 3; Ed25519 sig catches it first.
+// TC2: Naive tamper - flip a byte in chunk 3; Ed25519 sig catches it first.
 static int tc2_naiveTamperChunk3(EncryptionEngine& eng, const QString& dir)
 {
     const QString plain = dir + "/tc2_plain.bin";
@@ -363,7 +363,7 @@ static int tc3_attackerResigns(EncryptionEngine& eng, const QString& dir)
     return failures;
 }
 
-// TC4: Sub-chunk file (< 1 MiB) — exactly one chunk.
+// TC4: Sub-chunk file (< 1 MiB) - exactly one chunk.
 static int tc4_subChunkFile(EncryptionEngine& eng, const QString& dir)
 {
     const QString plain = dir + "/tc4_plain.bin";
@@ -390,7 +390,7 @@ static int tc4_subChunkFile(EncryptionEngine& eng, const QString& dir)
     return 0;
 }
 
-// TC5: Exactly 2 MiB file — two full chunks, no partial tail.
+// TC5: Exactly 2 MiB file - two full chunks, no partial tail.
 static int tc5_exact2MiB(EncryptionEngine& eng, const QString& dir)
 {
     const QString plain = dir + "/tc5_plain.bin";

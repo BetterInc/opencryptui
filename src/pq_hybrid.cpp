@@ -1,4 +1,4 @@
-// pq_hybrid.cpp — Full implementation using liboqs + libsodium.
+// pq_hybrid.cpp - Full implementation using liboqs + libsodium.
 //
 // Compiled ONLY when OCUI_HAVE_LIBOQS is defined.  The CMake orchestrator must
 // conditionally compile this file; pq_hybrid_stub.cpp provides the same
@@ -51,7 +51,7 @@ static constexpr int PQ_BLOB_LEN = MLKEM_CT_LEN + WRAPPED_DEK_LEN;
 // ---------------------------------------------------------------------------
 
 // Derive a 32-byte KEK using HKDF-SHA-256 (OpenSSL 3.x EVP_KDF API).
-// ikm  = classical_ss (32) || pq_ss (32)  — 64 bytes total
+// ikm  = classical_ss (32) || pq_ss (32)  - 64 bytes total
 // salt = random 32 bytes
 // info = "OCUI-HYBRID-V1"
 static bool deriveKek(const unsigned char* classical_ss,
@@ -94,7 +94,7 @@ static bool deriveKek(const unsigned char* classical_ss,
 }
 
 // AES-256-GCM encrypt plaintext (DEK_LEN bytes) under kek.
-// Output: [nonce (12)][ciphertext (DEK_LEN)][tag (16)] — WRAPPED_DEK_LEN bytes total.
+// Output: [nonce (12)][ciphertext (DEK_LEN)][tag (16)] - WRAPPED_DEK_LEN bytes total.
 static bool aesGcmEncryptDek(const unsigned char* kek,
                               const unsigned char* plaintext,
                               unsigned char* out)
@@ -134,7 +134,7 @@ static bool aesGcmDecryptDek(const unsigned char* kek,
 {
     const unsigned char* nonce = in;
     const unsigned char* ct    = in + GCM_NONCE_LEN;
-    // tag is appended after ciphertext — make a mutable copy for the OpenSSL API
+    // tag is appended after ciphertext - make a mutable copy for the OpenSSL API
     unsigned char tag[GCM_TAG_LEN];
     std::memcpy(tag, ct + DEK_LEN, GCM_TAG_LEN);
 
@@ -169,7 +169,7 @@ namespace PqHybrid {
 
 bool isAvailable()
 {
-    // OQS_VERSION_TEXT is defined by oqs/oqs.h — if we compiled this TU, it's
+    // OQS_VERSION_TEXT is defined by oqs/oqs.h - if we compiled this TU, it's
     // definitely available at runtime too (statically linked or the .so was
     // found by the linker).
     return true;
@@ -193,7 +193,7 @@ KeyPair generateKeyPair()
         kem = OQS_KEM_new(OQS_KEM_alg_kyber_1024);
     }
     if (!kem) {
-        qWarning() << "PqHybrid: OQS_KEM_new(ML-KEM-1024) failed — liboqs may lack this algorithm";
+        qWarning() << "PqHybrid: OQS_KEM_new(ML-KEM-1024) failed - liboqs may lack this algorithm";
         kp = KeyPair{};
         return kp;
     }
@@ -241,7 +241,7 @@ HybridWrappedKey wrap(const QByteArray& dek,
     crypto_kx_keypair(eph_pub, eph_sec);
 
     unsigned char classical_ss[32];
-    // crypto_scalarmult: scalar = eph_sec, point = recipient pub → shared secret
+    // crypto_scalarmult: scalar = eph_sec, point = recipient pub -> shared secret
     if (crypto_scalarmult(classical_ss, eph_sec,
                           reinterpret_cast<const unsigned char*>(classicalPublic.constData()))
         != 0)
@@ -412,7 +412,7 @@ QByteArray unwrap(const HybridWrappedKey& blob,
     if (sodium_memcmp(dek_c, dek_p, DEK_LEN) != 0) {
         sodium_memzero(dek_c, sizeof(dek_c));
         sodium_memzero(dek_p, sizeof(dek_p));
-        return fail("DEK mismatch between classical and PQ blobs — possible attack or corruption");
+        return fail("DEK mismatch between classical and PQ blobs - possible attack or corruption");
     }
 
     QByteArray dek(reinterpret_cast<const char*>(dek_c), DEK_LEN);

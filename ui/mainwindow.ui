@@ -1404,12 +1404,12 @@
         </action>
         <action name="actionCreateContainer">
             <property name="text">
-                <string>Create Encrypted Container…</string>
+                <string>Create Encrypted Container...</string>
             </property>
         </action>
         <action name="actionOpenContainer">
             <property name="text">
-                <string>Open Encrypted Container…</string>
+                <string>Open Encrypted Container...</string>
             </property>
         </action>
         <action name="actionExit">

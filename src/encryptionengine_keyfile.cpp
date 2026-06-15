@@ -1,4 +1,4 @@
-// Keyfile I/O — extracted from encryptionengine_keyderivation.cpp so
+// Keyfile I/O - extracted from encryptionengine_keyderivation.cpp so
 // that file can focus on the KDF primitives themselves. The HMAC-based
 // combining of keyfile material into the master password lives in
 // deriveKey() next door; this file is just the disk read.

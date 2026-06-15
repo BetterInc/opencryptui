@@ -15,7 +15,7 @@
 // encrypt-then-decrypt with the same password (see commit ba38107)
 // because Qt's implicit sharing meant the caller saw zeros on the
 // next call. Document the residual swap exposure in SECURITY.md
-// instead — it's the lesser evil.
+// instead - it's the lesser evil.
 #ifndef OPENCRYPTUI_SECURE_STRING_H
 #define OPENCRYPTUI_SECURE_STRING_H
 

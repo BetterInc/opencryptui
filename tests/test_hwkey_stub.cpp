@@ -1,4 +1,4 @@
-// test_hwkey_stub.cpp — Unit tests for the HwKey stub wrap/unwrap path.
+// test_hwkey_stub.cpp - Unit tests for the HwKey stub wrap/unwrap path.
 //
 // Tests:
 //   1.  detect() returns a valid backend enum value.
@@ -7,9 +7,9 @@
 //   4.  wrappingBackend() == Backend::Stub regardless of detect() result.
 //   5.  detect().effectiveBackend == Backend::Stub.
 //   6.  Round-trip: wrap a 32-byte DEK, unwrap, bytes are byte-identical.
-//   7.  Tamper: flipped byte in ciphertext region → unwrap fails.
-//   8.  Tamper: flipped last byte (tag) → unwrap fails.
-//   9.  Tamper: truncated blob → unwrap fails.
+//   7.  Tamper: flipped byte in ciphertext region -> unwrap fails.
+//   8.  Tamper: flipped last byte (tag) -> unwrap fails.
+//   9.  Tamper: truncated blob -> unwrap fails.
 //   10. Empty DEK: wrapKey returns empty + sets errorOut cleanly.
 //   11. No TPM2 ASN.1 magic (0x80 0x01) or PKCS#11 marker in first 16 bytes.
 //   12. Two wraps of different DEKs produce blobs that differ in nonce region.
@@ -26,7 +26,7 @@
 #include <cstdio>
 
 // ---------------------------------------------------------------------------
-// check() — print result and return 1 on failure (to accumulate into failures).
+// check() - print result and return 1 on failure (to accumulate into failures).
 // ---------------------------------------------------------------------------
 static int check(bool condition, const char* label)
 {
@@ -39,7 +39,7 @@ static int check(bool condition, const char* label)
 }
 
 // ---------------------------------------------------------------------------
-// make32ByteDEK() — deterministic 32-byte test key (not crypto-quality).
+// make32ByteDEK() - deterministic 32-byte test key (not crypto-quality).
 // ---------------------------------------------------------------------------
 static QByteArray make32ByteDEK()
 {
@@ -50,7 +50,7 @@ static QByteArray make32ByteDEK()
 }
 
 // ---------------------------------------------------------------------------
-// makeAltDEK() — second distinct 32-byte test key.
+// makeAltDEK() - second distinct 32-byte test key.
 // ---------------------------------------------------------------------------
 static QByteArray makeAltDEK()
 {
@@ -74,7 +74,7 @@ int main(int argc, char** argv)
     int failures = 0;
 
     // -----------------------------------------------------------------------
-    // Tests 1–2: detect() returns a valid Capabilities struct.
+    // Tests 1-2: detect() returns a valid Capabilities struct.
     //   On a CI Linux box without a TPM, Backend::None is the expected result.
     //   On a dev machine with /dev/tpmrm0, Backend::LinuxTPM2 is expected.
     //   Either way the call must not crash and device_name must be non-empty.
@@ -118,7 +118,7 @@ int main(int argc, char** argv)
 
     // -----------------------------------------------------------------------
     // Test 4: wrappingBackend() always returns Backend::Stub.
-    //   This is the key honesty guarantee — callers can query what wrapKey()
+    //   This is the key honesty guarantee - callers can query what wrapKey()
     //   will ACTUALLY use, not just what hardware is present.
     // -----------------------------------------------------------------------
     {
@@ -138,7 +138,7 @@ int main(int argc, char** argv)
     }
 
     // -----------------------------------------------------------------------
-    // Test 6: Round-trip — wrap then unwrap yields the original DEK.
+    // Test 6: Round-trip - wrap then unwrap yields the original DEK.
     // -----------------------------------------------------------------------
     {
         const QByteArray originalDEK = make32ByteDEK();
@@ -172,7 +172,7 @@ int main(int argc, char** argv)
     }
 
     // -----------------------------------------------------------------------
-    // Tests 7–9: Tamper detection — any modification must cause unwrap failure.
+    // Tests 7-9: Tamper detection - any modification must cause unwrap failure.
     // -----------------------------------------------------------------------
     {
         const QByteArray originalDEK = make32ByteDEK();
@@ -196,7 +196,7 @@ int main(int argc, char** argv)
                 QByteArray result = HwKey::unwrapKey(tampered, &unwrapError);
 
                 failures += check(result.isEmpty(),
-                                  "tamper: flipped byte in ciphertext region → unwrap fails");
+                                  "tamper: flipped byte in ciphertext region -> unwrap fails");
                 failures += check(!unwrapError.isEmpty(),
                                   "tamper: errorOut is set when unwrap rejects tampered blob");
             }
@@ -211,7 +211,7 @@ int main(int argc, char** argv)
                 QByteArray result = HwKey::unwrapKey(tampered, &unwrapError);
 
                 failures += check(result.isEmpty(),
-                                  "tamper: flipped last byte (outer GCM tag) → unwrap fails");
+                                  "tamper: flipped last byte (outer GCM tag) -> unwrap fails");
                 failures += check(!unwrapError.isEmpty(),
                                   "tamper: errorOut is set for tag corruption");
             }
@@ -223,7 +223,7 @@ int main(int argc, char** argv)
                 QByteArray result = HwKey::unwrapKey(truncated, &unwrapError);
 
                 failures += check(result.isEmpty(),
-                                  "tamper: truncated blob → unwrap fails");
+                                  "tamper: truncated blob -> unwrap fails");
                 failures += check(!unwrapError.isEmpty(),
                                   "tamper: errorOut is set for truncated blob");
             }
@@ -231,7 +231,7 @@ int main(int argc, char** argv)
     }
 
     // -----------------------------------------------------------------------
-    // Test 10: Empty DEK — wrapKey must fail cleanly without crashing.
+    // Test 10: Empty DEK - wrapKey must fail cleanly without crashing.
     // -----------------------------------------------------------------------
     {
         const QByteArray emptyDEK;
@@ -245,7 +245,7 @@ int main(int argc, char** argv)
     }
 
     // -----------------------------------------------------------------------
-    // Test 11: Forensic structure check — no TPM2 ASN.1 prefix or PKCS#11
+    // Test 11: Forensic structure check - no TPM2 ASN.1 prefix or PKCS#11
     //   marker in the first 16 bytes of the wrapped blob.
     //
     //   TPM2_PUBLIC structures start with 0x00 0x58 (size) or use the ASN.1
@@ -276,7 +276,7 @@ int main(int argc, char** argv)
                 fprintf(stdout, "%02x ", b[i]);
             fprintf(stdout, "\n");
 
-            // The outer format has no fixed-position magic header — first byte
+            // The outer format has no fixed-position magic header - first byte
             // is nonce byte 0, which is uniformly random. We cannot guarantee
             // it will never happen to equal 0x30 in any single run, but we CAN
             // verify the two-byte marker 0x80 0x01 is absent from the first 16
@@ -311,7 +311,7 @@ int main(int argc, char** argv)
     // -----------------------------------------------------------------------
     // Test 12: Two wraps of DIFFERENT DEKs produce blobs that differ in the
     //   nonce region (first 12 bytes). Since nonces are random, two successive
-    //   wraps should almost certainly differ — the probability of collision is
+    //   wraps should almost certainly differ - the probability of collision is
     //   2^-96. We test both DEK-A vs DEK-B and two wraps of DEK-A.
     // -----------------------------------------------------------------------
     {

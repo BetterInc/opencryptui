@@ -117,7 +117,7 @@ static QByteArray buildHeaderSlot(EncryptionEngine& eng, const QString& password
 }
 
 // Try to open a header slot. On success returns true and fills the out-params.
-// dataKeyOut is the (sensitive) per-volume data key — caller must wipe it.
+// dataKeyOut is the (sensitive) per-volume data key - caller must wipe it.
 static bool tryOpenSlot(EncryptionEngine& eng, QFile& f, qint64 slotOffset,
                         const QString& password, const QString& kdf, int iterations,
                         quint8& kindOut, quint64& dataOffsetOut, quint64& dataLenOut,

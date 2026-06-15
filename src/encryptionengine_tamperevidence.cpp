@@ -39,8 +39,8 @@
     sodium_memzero(master.data(), master.size()); // wipe the full buffer now
 
     // The context string must be exactly 8 bytes (NUL-padded if shorter).
-    // "OCUI-KEY" → encryption sub-key
-    // "OCUI-SIG" → signing sub-key
+    // "OCUI-KEY" -> encryption sub-key
+    // "OCUI-SIG" -> signing sub-key
     static_assert(crypto_kdf_CONTEXTBYTES == 8, "libsodium context must be 8 bytes");
 
     encryptionKey.resize(static_cast<int>(crypto_kdf_BYTES_MAX <= 32
@@ -89,7 +89,7 @@ QByteArray EncryptionEngine::generateDigitalSignature(QFile& inputFile, const QB
     QByteArray publicKey(crypto_sign_PUBLICKEYBYTES, 0);
     QByteArray secretKey(crypto_sign_SECRETKEYBYTES, 0);
 
-    // key IS the 32-byte seed from deriveSubkeys — use it directly.
+    // key IS the 32-byte seed from deriveSubkeys - use it directly.
     if (key.size() < static_cast<int>(crypto_sign_SEEDBYTES)) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
             "Signing seed too short for Ed25519");

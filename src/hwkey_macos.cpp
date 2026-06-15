@@ -1,4 +1,4 @@
-// hwkey_macos.cpp — macOS Secure Enclave hardware key wrapping (scaffolding).
+// hwkey_macos.cpp - macOS Secure Enclave hardware key wrapping (scaffolding).
 //
 // BACKEND: Apple Secure Enclave via Security.framework.
 //
@@ -8,7 +8,7 @@
 //   request; if it succeeds the SE is present. On Intel Macs without a T2 chip
 //   (pre-2018) and on iOS Simulator this will fail gracefully.
 //
-// CURRENT STATUS — SCAFFOLDING:
+// CURRENT STATUS - SCAFFOLDING:
 //   detect() returns MacSecureEnclave in the backend field when the SE is
 //   available, None otherwise. HOWEVER, supportsKeyWrap is ALWAYS false and
 //   effectiveBackend is ALWAYS Backend::Stub, because wrapKey/unwrapKey still
@@ -84,7 +84,7 @@ QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut);
 } // namespace Stub
 
 // ---------------------------------------------------------------------------
-// probeSecureEnclave() — return true iff a Secure Enclave key can be created.
+// probeSecureEnclave() - return true iff a Secure Enclave key can be created.
 //   We attempt SecKeyCreateRandomKey with kSecAttrTokenIDSecureEnclave.
 //   If the call succeeds we immediately delete the probe key and return true.
 // ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ static bool probeSecureEnclave()
     CFErrorRef error = nullptr;
 
     // Build access control: require private key usage, no biometric gate
-    // (probe only — we don't want a biometric prompt during detection).
+    // (probe only - we don't want a biometric prompt during detection).
     SecAccessControlRef access =
         SecAccessControlCreateWithFlags(
             kCFAllocatorDefault,
@@ -140,7 +140,7 @@ static bool probeSecureEnclave()
 }
 
 // ---------------------------------------------------------------------------
-// detect() — macOS implementation.
+// detect() - macOS implementation.
 //
 //   Returns backend = MacSecureEnclave when the SE is accessible, reporting
 //   that hardware IS present. However, supportsKeyWrap is always false and
@@ -168,7 +168,7 @@ Capabilities detect()
 }
 
 // ---------------------------------------------------------------------------
-// wrapKey() — macOS implementation.
+// wrapKey() - macOS implementation.
 //
 //   API CONTRACT: delegates to the software stub. wrappingBackend() == Stub.
 //   Even when the Secure Enclave is present, this function uses the software
@@ -183,7 +183,7 @@ QByteArray wrapKey(const QByteArray& dek, QString* errorOut)
 }
 
 // ---------------------------------------------------------------------------
-// unwrapKey() — macOS implementation.
+// unwrapKey() - macOS implementation.
 //   Scaffolding: delegates to stub until real SE ECIES calls are in place.
 // ---------------------------------------------------------------------------
 QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut)

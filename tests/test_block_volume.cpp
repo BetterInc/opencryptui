@@ -1,4 +1,4 @@
-// Authenticated random-access block volume test — the substrate for mounting.
+// Authenticated random-access block volume test - the substrate for mounting.
 //
 // Critical property under test: in-place block REWRITES must not reuse a GCM
 // nonce. We write the same block twice with different content and confirm the
@@ -104,7 +104,7 @@ int main(int argc, char** argv)
         check(back == span, "readRange returns what was written");
     }
 
-    // Tamper a data block → read fails authentication.
+    // Tamper a data block -> read fails authentication.
     {
         QFile f(path);
         if (f.open(QIODevice::ReadWrite)) {
@@ -156,7 +156,7 @@ int main(int argc, char** argv)
         const qint64 devSize = 4 * 1024 * 1024;
         { QFile f(devPath); f.open(QIODevice::WriteOnly); f.resize(devSize); f.close(); }
 
-        // A plain file is not in /proc/mounts → not blocked.
+        // A plain file is not in /proc/mounts -> not blocked.
         check(BlockVolume::deviceEraseBlocker(devPath).isEmpty(), "unmounted file not blocked");
 
         QString ferr;

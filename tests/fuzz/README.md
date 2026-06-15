@@ -1,7 +1,7 @@
 # OpenCryptUI libFuzzer Harnesses
 
 Three libFuzzer harnesses targeting the highest-risk parsing surfaces in the
-encryption engine.  They are **development tools only** — production releases
+encryption engine.  They are **development tools only** - production releases
 are built without `OCUI_ENABLE_FUZZ`.
 
 ---
@@ -10,9 +10,9 @@ are built without `OCUI_ENABLE_FUZZ`.
 
 | Binary | Source | APIs driven | Primary attack surface |
 |--------|--------|-------------|------------------------|
-| `FuzzOCUIHeader` | `fuzz_ocui_header.cpp` | `EncryptionEngine::decryptFile` → `cryptOperation` (decrypt branch) | OCUI magic, format-version, algorithm-id, KDF-id, iteration-floor, salt/IV read for both v2 and v3 |
-| `FuzzChunkDecoder` | `fuzz_chunk_decoder.cpp` | `decryptFile` → `cryptOperationV3Decrypt` → `decryptChunk` | v3 chunk-framing (chunk_size, chunk_count), per-chunk GCM tag verification, `buildChunkNonce`, EVP_Decrypt* |
-| `FuzzSignatureVerifier` | `fuzz_signature_verifier.cpp` | `decryptFile` → `verifySignature` | Trailer magic/sigLen/CRC parse, Ed25519 public-key derivation, constant-time pubkey comparison, SHA-512 hash-then-verify |
+| `FuzzOCUIHeader` | `fuzz_ocui_header.cpp` | `EncryptionEngine::decryptFile` -> `cryptOperation` (decrypt branch) | OCUI magic, format-version, algorithm-id, KDF-id, iteration-floor, salt/IV read for both v2 and v3 |
+| `FuzzChunkDecoder` | `fuzz_chunk_decoder.cpp` | `decryptFile` -> `cryptOperationV3Decrypt` -> `decryptChunk` | v3 chunk-framing (chunk_size, chunk_count), per-chunk GCM tag verification, `buildChunkNonce`, EVP_Decrypt* |
+| `FuzzSignatureVerifier` | `fuzz_signature_verifier.cpp` | `decryptFile` -> `verifySignature` | Trailer magic/sigLen/CRC parse, Ed25519 public-key derivation, constant-time pubkey comparison, SHA-512 hash-then-verify |
 
 ---
 
@@ -134,7 +134,7 @@ The optional `fuzz-smoke` CI job (`.github/workflows/build-and-release.yml`)
 runs each fuzzer for 60 s when triggered manually with `run_fuzz: true`:
 
 ```sh
-# Via the GitHub UI: Actions → fuzz-smoke → Run workflow → run_fuzz=true
+# Via the GitHub UI: Actions -> fuzz-smoke -> Run workflow -> run_fuzz=true
 ```
 
 The job fails if any fuzzer exits with a non-zero code or produces a
@@ -149,13 +149,13 @@ The job fails if any fuzzer exits with a non-zero code or produces a
    means every fuzz iteration that reaches the key-derivation step spends ~
    10 ms on PBKDF2.  This caps throughput at roughly 100 iterations/s on a
    modern core for inputs that pass the header validation.  Inputs rejected at
-   the OCUI magic or algorithm-id checks are much faster (< 1 µs).  A future
+   the OCUI magic or algorithm-id checks are much faster (< 1 us).  A future
    optimisation would expose an internal test-only constructor that accepts a
    pre-derived key, bypassing KDF entirely.
 
 2. **No in-process `decryptChunk` access.** Because `decryptChunk` is a
    `private static` method, `FuzzChunkDecoder` cannot call it directly.  It
-   drives the full `decryptFile` → `cryptOperationV3Decrypt` → `decryptChunk`
+   drives the full `decryptFile` -> `cryptOperationV3Decrypt` -> `decryptChunk`
    stack instead, which is actually broader coverage but slower than a direct
    harness would be.
 
@@ -168,5 +168,5 @@ The job fails if any fuzzer exits with a non-zero code or produces a
 ## Security note
 
 This infrastructure is a **development-time tool**.  Never ship a binary built
-with `-fsanitize=fuzzer,address,undefined` — it is significantly larger and
+with `-fsanitize=fuzzer,address,undefined` - it is significantly larger and
 slower than a release build and the fuzzer runtime exposes internal state.

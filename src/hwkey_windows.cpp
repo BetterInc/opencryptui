@@ -1,4 +1,4 @@
-// hwkey_windows.cpp — Windows TPM 2.0 hardware key wrapping via CNG (scaffolding).
+// hwkey_windows.cpp - Windows TPM 2.0 hardware key wrapping via CNG (scaffolding).
 //
 // BACKEND: Windows CNG NCrypt / BCrypt via ncrypt.h / bcrypt.h.
 //
@@ -8,7 +8,7 @@
 //   TPM 2.0 is present and accessible. We open and immediately close the
 //   provider handle as a probe.
 //
-// CURRENT STATUS — SCAFFOLDING:
+// CURRENT STATUS - SCAFFOLDING:
 //   detect() probes for the TPM provider and returns WindowsTPM in the backend
 //   field if found, None otherwise. HOWEVER, supportsKeyWrap is ALWAYS false
 //   and effectiveBackend is ALWAYS Backend::Stub, because wrapKey/unwrapKey
@@ -88,7 +88,7 @@ QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut);
 } // namespace Stub
 
 // ---------------------------------------------------------------------------
-// probeWindowsTPM() — attempt to open the CNG TPM key storage provider.
+// probeWindowsTPM() - attempt to open the CNG TPM key storage provider.
 //   Returns true iff the provider opens successfully.
 // ---------------------------------------------------------------------------
 static bool probeWindowsTPM()
@@ -106,7 +106,7 @@ static bool probeWindowsTPM()
 }
 
 // ---------------------------------------------------------------------------
-// detect() — Windows implementation.
+// detect() - Windows implementation.
 //
 //   Returns backend = WindowsTPM when the CNG TPM provider is accessible,
 //   reporting that hardware IS present. However, supportsKeyWrap is always
@@ -135,7 +135,7 @@ Capabilities detect()
 }
 
 // ---------------------------------------------------------------------------
-// wrapKey() — Windows implementation.
+// wrapKey() - Windows implementation.
 //
 //   API CONTRACT: delegates to the software stub. wrappingBackend() == Stub.
 //   Even when a CNG TPM provider is present, this function uses the software
@@ -150,7 +150,7 @@ QByteArray wrapKey(const QByteArray& dek, QString* errorOut)
 }
 
 // ---------------------------------------------------------------------------
-// unwrapKey() — Windows implementation.
+// unwrapKey() - Windows implementation.
 //   Scaffolding: delegates to stub until real NCryptDecrypt calls are in place.
 // ---------------------------------------------------------------------------
 QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut)

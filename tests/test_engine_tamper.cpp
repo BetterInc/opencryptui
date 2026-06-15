@@ -1,6 +1,6 @@
 // Engine-level tamper test: flip bytes in the ciphertext / header / IV /
 // salt and verify decryption rejects the file AND leaves no plaintext
-// output on disk. No UI — direct EncryptionEngine API.
+// output on disk. No UI - direct EncryptionEngine API.
 #include "encryptionengine.h"
 #include <QCoreApplication>
 #include <QFile>
@@ -27,7 +27,7 @@ static bool flipByteAt(const QString& path, qint64 offset) {
     return true;
 }
 
-// Encrypts payload → returns ciphertext path. Caller responsible for removing.
+// Encrypts payload -> returns ciphertext path. Caller responsible for removing.
 static bool encryptFixture(EncryptionEngine& eng, const QString& dir,
                            QString* outCtPath, QString* outPlainPath)
 {
@@ -54,10 +54,10 @@ static int expectRejection(EncryptionEngine& eng, const QString& ctPath,
         return 1;
     }
     if (QFile::exists(plainPath)) {
-        qCritical() << "[" << label << "] tampered decrypt left plaintext on disk — SECURITY BUG";
+        qCritical() << "[" << label << "] tampered decrypt left plaintext on disk - SECURITY BUG";
         return 2;
     }
-    qInfo() << "[" << label << "] rejected as expected, no output file — OK";
+    qInfo() << "[" << label << "] rejected as expected, no output file - OK";
     return 0;
 }
 
@@ -99,7 +99,7 @@ int main(int argc, char** argv)
         QFile::remove(plain);
     }
 
-    // Negative control — untampered file MUST still decrypt.
+    // Negative control - untampered file MUST still decrypt.
     {
         QString ct, plain;
         if (!encryptFixture(eng, dir.path(), &ct, &plain)) {

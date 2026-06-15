@@ -26,18 +26,18 @@
 #include <sodium.h>
 
 // ---------------------------------------------------------------------------
-// isAeadAlgorithm — returns true for GCM / ChaCha20-Poly1305 ciphers.
+// isAeadAlgorithm - returns true for GCM / ChaCha20-Poly1305 ciphers.
 // These are the only algorithms that support the v3 per-chunk path.
 // ---------------------------------------------------------------------------
 /*static*/ bool EncryptionEngine::isAeadAlgorithm(const QString& algorithm)
 {
-    // Cascades are AEAD chains → routed through the v4 path like any AEAD.
+    // Cascades are AEAD chains -> routed through the v4 path like any AEAD.
     if (cascadeIdForAlgorithm(algorithm) != 0) return true;
     return algorithm.contains("GCM") || algorithm == "ChaCha20-Poly1305";
 }
 
 // ---------------------------------------------------------------------------
-// Cascade chunk helpers — apply N AEAD ciphers in sequence, each with its own
+// Cascade chunk helpers - apply N AEAD ciphers in sequence, each with its own
 // key. layerKeys[L] / ciphers[L] is layer L; layer 0 is innermost (applied
 // first on encrypt, last on decrypt). The same per-chunk nonce is reused
 // across layers: safe because each layer uses a DISTINCT key, and GCM/Poly1305
@@ -252,11 +252,11 @@
 
     int finalLen = 0;
     // EVP_DecryptFinal_ex performs the GCM tag verification.  A return value
-    // of 0 or less means authentication failed — return empty to signal error.
+    // of 0 or less means authentication failed - return empty to signal error.
     if (EVP_DecryptFinal_ex(ctx,
             reinterpret_cast<unsigned char*>(plaintext.data()) + outLen, &finalLen) <= 0) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-            "decryptChunk: GCM tag verification FAILED — chunk is corrupt or tampered");
+            "decryptChunk: GCM tag verification FAILED - chunk is corrupt or tampered");
         // Zero any partial plaintext before returning to prevent leakage.
         sodium_memzero(plaintext.data(), plaintext.size());
         return QByteArray();
@@ -294,7 +294,7 @@ bool EncryptionEngine::cryptOperationV3Encrypt(QFile& inputFile, QFile& outputFi
     const qint64 inputSize = inputFile.size();
     const qint64 chunkSz   = static_cast<qint64>(OCUI_CHUNK_SIZE);
     const quint32 chunkCount = static_cast<quint32>((inputSize + chunkSz - 1) / chunkSz);
-    // Handle empty file: at least 1 chunk (will encrypt 0 bytes → just a tag).
+    // Handle empty file: at least 1 chunk (will encrypt 0 bytes -> just a tag).
     const quint32 effectiveCount = (chunkCount == 0) ? 1 : chunkCount;
 
     {
@@ -399,7 +399,7 @@ bool EncryptionEngine::cryptOperationV3Decrypt(QFile& inputFile, QFile& outputFi
 
         if (!hasSig) {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                "V3 decrypt: file has no Ed25519 signature trailer — rejecting");
+                "V3 decrypt: file has no Ed25519 signature trailer - rejecting");
             return false;
         }
 
@@ -409,7 +409,7 @@ bool EncryptionEngine::cryptOperationV3Decrypt(QFile& inputFile, QFile& outputFi
 
         if (!valid) {
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                "V3 decrypt: Ed25519 signature verification FAILED — file tampered");
+                "V3 decrypt: Ed25519 signature verification FAILED - file tampered");
             return false;
         }
     }
@@ -489,9 +489,9 @@ bool EncryptionEngine::cryptOperationV3Decrypt(QFile& inputFile, QFile& outputFi
 
         QByteArray plain = decryptChunk(encKey, nonce, raw, algorithm);
         if (plain.isEmpty() && raw.size() > OCUI_GCM_TAG_SIZE) {
-            // Non-empty ciphertext but empty result → authentication failure.
+            // Non-empty ciphertext but empty result -> authentication failure.
             SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                QString("V3 decrypt: AEAD authentication FAILED at chunk %1 — aborting").arg(i));
+                QString("V3 decrypt: AEAD authentication FAILED at chunk %1 - aborting").arg(i));
             return false;
         }
 
@@ -575,9 +575,9 @@ bool EncryptionEngine::cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFi
 
     // -----------------------------------------------------------------------
     // Step 1: Derive three subkeys from the master.
-    //   - outer key  (id=3, ctx="OCUI-V4O") — wraps the inner blob
-    //   - enc key    (id=1, ctx="OCUI-KEY") — per-chunk chunk encryption
-    //   - sig key    (id=2, ctx="OCUI-SIG") — Ed25519 signing seed
+    //   - outer key  (id=3, ctx="OCUI-V4O") - wraps the inner blob
+    //   - enc key    (id=1, ctx="OCUI-KEY") - per-chunk chunk encryption
+    //   - sig key    (id=2, ctx="OCUI-SIG") - Ed25519 signing seed
     // -----------------------------------------------------------------------
     unsigned char kdfMaster[crypto_kdf_KEYBYTES];
     memcpy(kdfMaster, masterKeyBytes.constData(), crypto_kdf_KEYBYTES);
@@ -600,7 +600,7 @@ bool EncryptionEngine::cryptOperationV4Encrypt(QFile& inputFile, QFile& outputFi
         2, "OCUI-SIG", kdfMaster);
 
     // For a cascade, derive one independent 32-byte key per layer (subkey ids
-    // 11, 12, …) — disjoint from the enc(1)/sig(2)/outer(3) ids above.
+    // 11, 12, ...) - disjoint from the enc(1)/sig(2)/outer(3) ids above.
     QVector<QByteArray> layerKeys;
     int rcCascade = 0;
     if (isCascade) {
@@ -1017,7 +1017,7 @@ bool EncryptionEngine::cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFi
     int finalLen = 0;
     if (EVP_DecryptFinal_ex(dctx,
             reinterpret_cast<unsigned char*>(innerBuf.data()) + outLen, &finalLen) <= 0) {
-        // AEAD authentication failed — wrong password OR not a v4 file.
+        // AEAD authentication failed - wrong password OR not a v4 file.
         SECURE_LOG(DEBUG, "EncryptionEngine",
             "V4 decrypt: outer GCM authentication FAILED (wrong password or not v4)");
         sodium_memzero(encKey.data(), encKey.size());
@@ -1153,7 +1153,7 @@ bool EncryptionEngine::cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFi
 
     if (sodium_memcmp(pubKeyBytes, expectedPub.constData(), crypto_sign_PUBLICKEYBYTES) != 0) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-            "V4 decrypt: public key mismatch — file tampered or wrong password");
+            "V4 decrypt: public key mismatch - file tampered or wrong password");
         sodium_memzero(encKey.data(), encKey.size());
         sodium_memzero(innerBuf.data(), innerBuf.size());
         return false;
@@ -1183,7 +1183,7 @@ bool EncryptionEngine::cryptOperationV4Decrypt(QFile& inputFile, QFile& outputFi
 
     if (crypto_sign_verify_detached(sigBytes, hash, hashLen, pubKeyBytes) != 0) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-            "V4 decrypt: Ed25519 signature verification FAILED — file tampered");
+            "V4 decrypt: Ed25519 signature verification FAILED - file tampered");
         sodium_memzero(hash, sizeof(hash));
         sodium_memzero(encKey.data(), encKey.size());
         sodium_memzero(innerBuf.data(), innerBuf.size());

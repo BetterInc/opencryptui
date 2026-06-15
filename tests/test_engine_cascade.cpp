@@ -5,7 +5,7 @@
 // proves:
 //   1. Round-trip is byte-identical across multiple chunks (>1 MiB).
 //   2. The output is still deniable (no OCUI/SIG_/cipher-name strings, looks
-//      uniformly random) — cascades must not break v4 deniability.
+//      uniformly random) - cascades must not break v4 deniability.
 //   3. A wrong password is rejected.
 //   4. Tampering anywhere is rejected (outer AEAD + per-layer AEAD + Ed25519).
 //   5. Decrypting a cascade file with the WRONG recipe is rejected (the cascade

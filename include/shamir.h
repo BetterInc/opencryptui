@@ -2,15 +2,15 @@
 //
 // Splits a secret into `n` shares such that any `k` of them reconstruct it and
 // any `k-1` reveal nothing (information-theoretic). Use it to split a container
-// password or master key across people/locations so no single seized share —
-// or single coerced person — can unlock anything.
+// password or master key across people/locations so no single seized share -
+// or single coerced person - can unlock anything.
 //
 // Byte-wise scheme: each secret byte is the constant term of an independent
 // degree-(k-1) polynomial over GF(2^8) (AES field, reduction 0x11b); share i is
 // the polynomials evaluated at x=i. Reconstruction is Lagrange interpolation at
 // x=0. Coefficients come from a CSPRNG (RAND_bytes).
 //
-// Integrity: classic SSS gives no error on wrong/insufficient shares — you just
+// Integrity: classic SSS gives no error on wrong/insufficient shares - you just
 // get garbage. We append a 4-byte SHA-256 checksum to the secret BEFORE
 // splitting, so combine() can verify and FAIL LOUDLY rather than return junk.
 // The checksum is split too, so fewer than k shares still reveal nothing.

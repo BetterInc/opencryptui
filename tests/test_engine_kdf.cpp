@@ -1,10 +1,10 @@
 // Engine-level KDF behaviour test.
-//   - deriveKeyWithoutKeyfile is deterministic: same inputs → same key.
+//   - deriveKeyWithoutKeyfile is deterministic: same inputs -> same key.
 //   - Different salts produce different keys.
 //   - Different passwords produce different keys.
 //   - PBKDF2 below the 600k floor is rejected on decrypt.
 //   - Non-empty key is returned for each advertised KDF.
-// No UI, no filesystem roundtrip — this is focused on the key-derivation
+// No UI, no filesystem roundtrip - this is focused on the key-derivation
 // primitive itself.
 #include "encryptionengine.h"
 #include <QCoreApplication>
@@ -33,7 +33,7 @@ int main(int argc, char** argv)
     const QString saltB = "fedcba9876543210fedcba9876543210";
     const int keySize = 32;
 
-    // --- 1. Determinism: same inputs → same key (PBKDF2) -----------------
+    // --- 1. Determinism: same inputs -> same key (PBKDF2) -----------------
     {
         QByteArray k1 = eng.deriveKeyWithoutKeyfile(pwd, saltA, "PBKDF2", 600000, keySize);
         QByteArray k2 = eng.deriveKeyWithoutKeyfile(pwd, saltA, "PBKDF2", 600000, keySize);
@@ -41,18 +41,18 @@ int main(int argc, char** argv)
         failures += check(k1 == k2, "PBKDF2 deterministic");
     }
 
-    // --- 2. Different salt → different key -------------------------------
+    // --- 2. Different salt -> different key -------------------------------
     {
         QByteArray kA = eng.deriveKeyWithoutKeyfile(pwd, saltA, "PBKDF2", 600000, keySize);
         QByteArray kB = eng.deriveKeyWithoutKeyfile(pwd, saltB, "PBKDF2", 600000, keySize);
-        failures += check(kA != kB, "different salt → different key");
+        failures += check(kA != kB, "different salt -> different key");
     }
 
-    // --- 3. Different password → different key ---------------------------
+    // --- 3. Different password -> different key ---------------------------
     {
         QByteArray kA = eng.deriveKeyWithoutKeyfile(pwd,  saltA, "PBKDF2", 600000, keySize);
         QByteArray kB = eng.deriveKeyWithoutKeyfile(pwd2, saltA, "PBKDF2", 600000, keySize);
-        failures += check(kA != kB, "different password → different key");
+        failures += check(kA != kB, "different password -> different key");
     }
 
     // --- 4. Argon2 returns non-empty, advertised KDFs work ---------------
@@ -75,7 +75,7 @@ int main(int argc, char** argv)
     //
     // OCUI v2 header layout:
     //   [magic "OCUI" 4][ver 1][algId 1][kdfId 1][reserved 1][iters 4 BE]
-    //   → total 12 bytes, iters at offset 8..11.
+    //   -> total 12 bytes, iters at offset 8..11.
     {
         QTemporaryDir dir;
         if (!dir.isValid()) { qCritical("no tempdir"); return 99; }

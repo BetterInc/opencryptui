@@ -2,13 +2,13 @@
 //
 // Root cause: benchmarkCipher() had three bugs that caused a crash:
 //   1. Salt was 16 bytes; libsodium's crypto_pwhash_scryptsalsa208sha256
-//      reads exactly SALTBYTES (32) unconditionally — heap overread → segfault.
+//      reads exactly SALTBYTES (32) unconditionally - heap overread -> segfault.
 //   2. IV was hardcoded to 16 bytes for all ciphers.  GCM / ChaCha20-Poly1305
 //      require a 12-byte nonce; passing 16 bytes without first calling
 //      EVP_CTRL_GCM_SET_IVLEN corrupts the internal GCM GHASH state and
 //      causes a segfault inside EVP_EncryptUpdate.
 //   3. Argon2 iterations were passed as 10 with m_cost=1<<20 (1 GiB), so
-//      each Argon2 key-derivation consumed 1 GiB — OOM on typical CI boxes.
+//      each Argon2 key-derivation consumed 1 GiB - OOM on typical CI boxes.
 //
 // This test calls EncryptionWorker::runBenchmark() directly (same thread,
 // no QThread) with a tiny payload via a one-shot QCoreApplication event
@@ -66,7 +66,7 @@ int main(int argc, char **argv)
 
     worker.setBenchmarkParameters(algorithms, kdfs);
 
-    // --- run benchmark — must not crash -------------------------------------
+    // --- run benchmark - must not crash -------------------------------------
     QElapsedTimer wallClock;
     wallClock.start();
 
@@ -99,6 +99,6 @@ int main(int argc, char **argv)
         qCritical() << "FAILURES:" << failures;
         return 1;
     }
-    qInfo() << "ALL BENCHMARK CASES OK —" << results.size() << "results in" << wallMs << "ms";
+    qInfo() << "ALL BENCHMARK CASES OK -" << results.size() << "results in" << wallMs << "ms";
     return 0;
 }

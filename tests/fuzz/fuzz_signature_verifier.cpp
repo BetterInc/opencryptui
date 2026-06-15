@@ -6,7 +6,7 @@
 // Strategy: prepend a syntactically valid OCUI v2 header + salt + IV to the
 // fuzz input, so the header parse always succeeds and execution reaches the
 // signature-verification code path.  The fuzz engine controls the bytes that
-// follow the IV — i.e. the ciphertext region and the signature trailer.
+// follow the IV - i.e. the ciphertext region and the signature trailer.
 //
 // The signature trailer layout (from encryptionengine_tamperevidence.cpp):
 //   [sig N bytes][magic "SIG_" 4][sigLen 4][CRC32 4]
@@ -40,7 +40,7 @@
 // ---------------------------------------------------------------------------
 static constexpr quint32 OCUI_MAGIC         = 0x4F435549u; // "OCUI"
 static constexpr quint8  OCUI_FMT_V2        = 2;
-// AES-256-CBC (id=0x04) — non-AEAD, so v2 path is always taken.
+// AES-256-CBC (id=0x04) - non-AEAD, so v2 path is always taken.
 static constexpr quint8  ALG_ID_AES256_CBC  = 0x04;
 static constexpr quint8  KDF_ID_PBKDF2      = 0x01;
 static constexpr quint32 MIN_PBKDF2_ITERS   = 600000u;
@@ -111,7 +111,7 @@ static QByteArray buildV2File(const uint8_t* suffix, size_t suffixSize)
 
     // 32-byte salt + 16-byte IV (all zeros).
     // All-zero salt means key derivation is deterministic across iterations,
-    // which is fine here — we're stressing the signature verifier path, not
+    // which is fine here - we're stressing the signature verifier path, not
     // KDF correctness.
     for (int i = 0; i < SALT_SIZE + IV_SIZE; ++i) ds << quint8(0);
 
@@ -137,13 +137,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 
     // Call decryptFile with AES-256-CBC.  Execution flow:
     //   1. cryptOperation reads and validates the OCUI v2 header.
-    //      → magic OK, version OK, alg OK, kdf OK, iters at floor → proceed
+    //      -> magic OK, version OK, alg OK, kdf OK, iters at floor -> proceed
     //   2. Reads salt + IV from the fixed prefix.
     //   3. Derives masterKey via PBKDF2 from "fuzzer-password" + zero-salt.
     //   4. Calls deriveSubkeys to produce encKey + sigKey.
-    //   5. Checks enforceIntegrity → opens sigCheckFile for the trailer.
-    //      → reads last 12 bytes for magic/sigLen/CRC (fuzz-controlled).
-    //      → if magic == "SIG_": validates sigLen bounds, reads sig bytes,
+    //   5. Checks enforceIntegrity -> opens sigCheckFile for the trailer.
+    //      -> reads last 12 bytes for magic/sigLen/CRC (fuzz-controlled).
+    //      -> if magic == "SIG_": validates sigLen bounds, reads sig bytes,
     //        calls verifySignature with the fuzz-controlled body.
     //   6. verifySignature:
     //      a. Reads 12-byte trailer (magic, sigLen, CRC).

@@ -3,18 +3,18 @@
 // This is the substrate a mounted volume sits on: the FUSE driver presents a
 // virtual disk image whose reads/writes map onto readBlock()/writeBlock().
 //
-// SECURITY — nonce handling: a mountable volume rewrites blocks in place, so a
+// SECURITY - nonce handling: a mountable volume rewrites blocks in place, so a
 // deterministic per-index nonce would be REUSED across writes (catastrophic
 // for AES-GCM: leaks the auth subkey, enables forgery). Therefore every block
 // write picks a FRESH random 96-bit nonce, stored alongside the block. Each
 // (key, nonce) pair is thus used once.
 //
 // On-disk layout:
-//   [0 .. 4096)  header: salt(32) ‖ nonce(12) ‖ AES-256-GCM(hdr)+tag ‖ random pad
-//   then blockCount blocks, each: nonce(12) ‖ AES-256-GCM(block)+tag(16)
+//   [0 .. 4096)  header: salt(32) || nonce(12) || AES-256-GCM(hdr)+tag || random pad
+//   then blockCount blocks, each: nonce(12) || AES-256-GCM(block)+tag(16)
 //
-// header plaintext = magic(8) "OCUIBLK1" ‖ ver(1) ‖ pad(3) ‖ blockSize(4 BE)
-//                    ‖ blockCount(8 BE) ‖ dataKey(32)
+// header plaintext = magic(8) "OCUIBLK1" || ver(1) || pad(3) || blockSize(4 BE)
+//                    || blockCount(8 BE) || dataKey(32)
 //
 // create() initialises every block to encrypted zeros, so a fresh volume reads
 // back as a zeroed disk (no ambiguity between "unwritten" and "tampered").
@@ -72,7 +72,7 @@ public:
     // Format an EXISTING device/backing of `sizeBytes` bytes as an encrypted
     // volume (e.g. a whole USB stick). Does NOT truncate or delete the backing;
     // overwrites every byte with header + encrypted zeros. blockCount is sized
-    // to fill the device. DESTRUCTIVE — caller must confirm + ensure the device
+    // to fill the device. DESTRUCTIVE - caller must confirm + ensure the device
     // is unmounted and not the system disk.
     static bool createOnDevice(EncryptionEngine& eng, const QString& devicePath,
                               const QString& password, const QString& kdf, int iterations,
@@ -81,7 +81,7 @@ public:
 
     // Format an entire device (e.g. a USB stick) as an encrypted volume, with
     // all the safety checks: refuses on non-Linux (returns a clear "use a
-    // container file" error — Windows/macOS raw-device support is unimplemented),
+    // container file" error - Windows/macOS raw-device support is unimplemented),
     // refuses if the device or any of its partitions is mounted, auto-sizes the
     // device, then calls createOnDevice. DESTRUCTIVE: the caller must already
     // have the user's explicit, informed confirmation. blockSize defaults to
@@ -98,7 +98,7 @@ public:
 
     // Size in bytes of a path: real block-device size on Linux (BLKGETSIZE64),
     // else the regular-file size. Returns -1 on failure. (Windows/macOS device
-    // sizing not yet implemented — returns file size, which is 0 for a raw
+    // sizing not yet implemented - returns file size, which is 0 for a raw
     // device there; callers must supply the size explicitly on those OSes.)
     static qint64 deviceSizeBytes(const QString& path);
 

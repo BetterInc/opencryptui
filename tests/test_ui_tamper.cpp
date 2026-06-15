@@ -24,7 +24,7 @@ void TestOpenCryptUI::testTamperDetection()
     filePathInput->setText(testFilePath);
     passwordInput->setText("tampertest123");
     algorithmComboBox->setCurrentText("AES-256-GCM"); // Use GCM for authenticated encryption
-    // Use Argon2 (PBKDF2 now has a 600k-iteration floor — Fix #1 / SECURITY.md).
+    // Use Argon2 (PBKDF2 now has a 600k-iteration floor - Fix #1 / SECURITY.md).
     kdfComboBox->setCurrentText("Argon2");
     iterationsSpinBox->setValue(1);
     hmacCheckBox->setChecked(true); // Enable HMAC/integrity checking
@@ -69,7 +69,7 @@ void TestOpenCryptUI::testTamperDetection()
     QPushButton *decryptButton = mainWindow->findChild<QPushButton *>("fileDecryptButton");
     filePathInput->setText(encryptedFilePath);
     // The password field is cleared on encrypt-click (security: don't keep
-    // the password in QLineEdit's internal QString longer than needed —
+    // the password in QLineEdit's internal QString longer than needed -
     // see startWorker()). Real users re-type to decrypt; this test does
     // the same.
     passwordInput->setText("tampertest123");

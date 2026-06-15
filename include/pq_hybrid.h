@@ -1,4 +1,4 @@
-// pq_hybrid.h — Post-quantum hybrid key-wrapping for OpenCryptUI.
+// pq_hybrid.h - Post-quantum hybrid key-wrapping for OpenCryptUI.
 //
 // This header defines the PqHybrid namespace which provides a classical +
 // post-quantum key-encapsulation layer on top of the existing AES-256-GCM /
@@ -26,7 +26,7 @@
 namespace PqHybrid {
 
 // ---------------------------------------------------------------------------
-// HybridWrappedKey — the blob stored alongside each encrypted file.
+// HybridWrappedKey - the blob stored alongside each encrypted file.
 //
 // Both halves must be present and valid to recover the DEK; an attacker who
 // breaks only X25519 (Shor's algorithm) or only ML-KEM-1024 still cannot
@@ -48,7 +48,7 @@ struct HybridWrappedKey {
 };
 
 // ---------------------------------------------------------------------------
-// KeyPair — generated once per recipient and stored securely by the caller.
+// KeyPair - generated once per recipient and stored securely by the caller.
 //
 // Public halves go into the file header; secret halves should be wrapped by the
 // hardware-key layer (HwKey) before storage.
@@ -117,8 +117,8 @@ HybridWrappedKey wrap(const QByteArray& dek,
 //   2. Extract pq_ct from pqBlob; compute
 //      pq_ss = ML-KEM-1024.Decap(pqSecret, pq_ct).
 //   3. Reconstruct kek via the same HKDF call as wrap().
-//   4. Decrypt classicalBlob ciphertext → dek_c.
-//   5. Decrypt pqBlob ciphertext        → dek_p.
+//   4. Decrypt classicalBlob ciphertext -> dek_c.
+//   5. Decrypt pqBlob ciphertext        -> dek_p.
 //   6. Verify dek_c == dek_p; fail if not (integrity / tampering check).
 //   7. Return dek_c.
 //

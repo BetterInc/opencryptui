@@ -11,11 +11,11 @@ worthless.
 The practical threat to *symmetric* ciphers is more modest: Grover's algorithm
 provides a quadratic speedup for key search, effectively halving the security
 level.  AES-256-GCM and ChaCha20-Poly1305 retain approximately 128 bits of
-post-quantum security — acceptable for most threat models.
+post-quantum security - acceptable for most threat models.
 
 **Harvest-now-decrypt-later (HNDL)** changes the calculus for long-lived
 secrets.  An adversary with network access today can archive encrypted traffic
-and files and decrypt them once a CRQC becomes available — potentially years
+and files and decrypt them once a CRQC becomes available - potentially years
 from now.  For security researchers whose zero-days, source code, or
 communications may stay sensitive for a decade, this is a realistic threat.
 
@@ -34,12 +34,12 @@ from *both* shared secrets jointly via HKDF-SHA-256.
 | Combiner | HKDF-SHA-256, info = `OCUI-HYBRID-V1` | RFC 5869 |
 | DEK wrapping | AES-256-GCM | NIST SP 800-38D |
 
-ML-KEM-1024 provides NIST security level 5 (≥256-bit classical, ≥128-bit
+ML-KEM-1024 provides NIST security level 5 (>=256-bit classical, >=128-bit
 post-quantum).
 
 ## Installing liboqs
 
-### Linux — Ubuntu / Debian
+### Linux - Ubuntu / Debian
 
 A packaged version may be available:
 
@@ -97,7 +97,7 @@ brew --prefix liboqs
 #         or /usr/local/opt/liboqs   (Intel)
 ```
 
-### Windows — MSYS2 (MinGW-w64 toolchain)
+### Windows - MSYS2 (MinGW-w64 toolchain)
 
 liboqs is not yet available as a pre-built MSYS2 package.  Build from source
 inside the MinGW-w64 shell:
@@ -124,19 +124,19 @@ MinGW-w64 toolchain already searches, so no extra CMake hints are needed.
 ## How OpenCryptUI picks up liboqs
 
 The CMake orchestrator needs to add the following block to `CMakeLists.txt`
-(note: do **not** add it yourself — this README documents the requirement for
+(note: do **not** add it yourself - this README documents the requirement for
 the orchestrator):
 
 ```cmake
 find_package(liboqs QUIET)
 
 if(liboqs_FOUND)
-    message(STATUS "liboqs found — building with PQ hybrid support")
+    message(STATUS "liboqs found - building with PQ hybrid support")
     target_compile_definitions(opencryptui PRIVATE OCUI_HAVE_LIBOQS)
     target_sources(opencryptui PRIVATE src/pq_hybrid.cpp)
     target_link_libraries(opencryptui PRIVATE OQS::oqs)
 else()
-    message(STATUS "liboqs NOT found — PQ hybrid support disabled (stub build)")
+    message(STATUS "liboqs NOT found - PQ hybrid support disabled (stub build)")
     target_sources(opencryptui PRIVATE src/pq_hybrid_stub.cpp)
 endif()
 

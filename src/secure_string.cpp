@@ -21,7 +21,7 @@ static void try_lock(void* p, std::size_t n) noexcept
     if (!p || n == 0) return;
 #ifdef Q_OS_WIN
     // VirtualLock can only lock pages, not arbitrary byte ranges; the
-    // kernel rounds up. Best-effort — if the per-process lock quota is
+    // kernel rounds up. Best-effort - if the per-process lock quota is
     // exhausted, we don't fail the call site.
     (void)VirtualLock(p, n);
 #else

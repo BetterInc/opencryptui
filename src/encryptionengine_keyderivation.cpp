@@ -13,13 +13,13 @@
 #include <cpuid.h>
 #endif
 
-// readKeyfile() moved to encryptionengine_keyfile.cpp — pure disk I/O,
+// readKeyfile() moved to encryptionengine_keyfile.cpp - pure disk I/O,
 // kept here only because it used to share a translation unit with
 // deriveKey().
 
 QByteArray EncryptionEngine::deriveKey(const QString& password, const QByteArray& salt, const QStringList& keyfilePaths, const QString& kdf, int iterations) {
     // Thin wrapper: copy the QString's UTF-8 into a locked SecureString and
-    // delegate. The caller's QString isn't wiped here — wiping a
+    // delegate. The caller's QString isn't wiped here - wiping a
     // `const QString&` via const_cast corrupted reused passwords in the past
     // (see commit ba38107). The mlocked SecureString this creates is the
     // engine's own copy; it's zeroed when this function returns.
@@ -80,7 +80,7 @@ QByteArray EncryptionEngine::deriveKey(const SecureString& password_buf, const Q
         // No keyfiles: pass the password directly to performKeyDerivation.
         // performKeyDerivation currently takes a QByteArray, so we must make a
         // temporary copy here.
-        // TODO: Residual leak surface — this temporary QByteArray exists in
+        // TODO: Residual leak surface - this temporary QByteArray exists in
         // unprotected heap memory until sodium_memzero clears it below.
         // A follow-up should refactor performKeyDerivation to accept
         // (const char*, size_t) so we can pass password_buf.data() directly
@@ -115,7 +115,7 @@ QByteArray EncryptionEngine::performKeyDerivation(const QByteArray& passwordWith
     // user-facing error. The UI pins spinbox minimums to the same floor, so a
     // user clicking through the app can never land here. This branch fires
     // only when something bypasses the UI (script, modified binary, future
-    // API caller). NEVER silently clamp — that's the antipattern we're killing.
+    // API caller). NEVER silently clamp - that's the antipattern we're killing.
     int secureIterations = calculateSecureIterations(kdf, iterations);
     if (secureIterations < 0) {
         const int floor = iterationFloorForKdf(kdf);
@@ -154,7 +154,7 @@ QByteArray EncryptionEngine::performKeyDerivation(const QByteArray& passwordWith
         // Key derivation with enhanced security parameters
         if (kdf == "Argon2") {
             // Use Argon2id - resistance against side-channel and timing attacks.
-            // Fixed memory cost of 1 GiB and parallelism 4 — strong defaults.
+            // Fixed memory cost of 1 GiB and parallelism 4 - strong defaults.
             // We deliberately do NOT silently fall back to a lower memory cost
             // on OOM: that would weaken the KDF behind the user's back. If
             // allocation fails we surface the error and let the user free
@@ -178,7 +178,7 @@ QByteArray EncryptionEngine::performKeyDerivation(const QByteArray& passwordWith
                     "Argon2 needs 1 GiB of memory to derive your key but the "
                     "allocation failed on this machine. Close memory-heavy "
                     "applications and retry, or pick another KDF (Scrypt / "
-                    "PBKDF2 — both far weaker but lower-memory).");
+                    "PBKDF2 - both far weaker but lower-memory).");
                 SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", m_lastError);
             }
         }
@@ -259,7 +259,7 @@ int EncryptionEngine::calculateSecureIterations(const QString& kdf, int requeste
     // layer defense-in-depth: if anything bypasses the UI (scripted use,
     // modified UI, future API caller), we refuse loudly rather than substitute.
     //
-    // Returns -1 to signal "refused — sub-floor value, do not derive a key".
+    // Returns -1 to signal "refused - sub-floor value, do not derive a key".
     // Callers MUST check for -1 and propagate a user-facing error.
     const int floor = iterationFloorForKdf(kdf);
     if (requestedIterations < floor) {
@@ -590,7 +590,7 @@ EncryptionEngine::EntropyTestResult EncryptionEngine::testEntropyQuality(const Q
     if (std::abs(serialResult) > 0.3) {
         result.passed = false;
         result.testName = "Serial";
-        result.details = QString("Serial correlation = %1, expected < ±0.3").arg(serialResult);
+        result.details = QString("Serial correlation = %1, expected < +/-0.3").arg(serialResult);
         return result;
     }
     

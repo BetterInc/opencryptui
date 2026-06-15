@@ -1,4 +1,4 @@
-// hwkey.h — Hardware-backed key wrapping abstraction for OpenCryptUI.
+// hwkey.h - Hardware-backed key wrapping abstraction for OpenCryptUI.
 //
 // SECURITY NOTES:
 // ============================================================================
@@ -9,7 +9,7 @@
 //   boot chain). The wrapped blob is ciphertext that can only be decrypted
 //   by the same device. Copying the blob to a different machine gives an
 //   attacker nothing useful. This ties confidentiality of the DEK to physical
-//   possession of the device — exactly what a security researcher needs.
+//   possession of the device - exactly what a security researcher needs.
 //
 // PKCS#11 / YUBIKEY PORTABILITY:
 //   YubiKey and Nitrokey devices implement PKCS#11. The private key never
@@ -27,11 +27,11 @@
 //
 //   Recommended minimum PIN/passphrase strength by backend:
 //     - TPM 2.0 (LinuxTPM2 / WindowsTPM): hardware lockout typically triggers
-//       after 3–10 failed attempts. Even so, use >= 6 random digits or a
+//       after 3-10 failed attempts. Even so, use >= 6 random digits or a
 //       memorable passphrase (>= 4 random words from a large wordlist,
 //       >= 50 bits of entropy). Dictionary words alone are NOT sufficient.
 //     - Secure Enclave (MacSecureEnclave): biometric (Touch ID / Face ID) is
-//       the primary authenticator — PIN fallback should be >= 6 digits with
+//       the primary authenticator - PIN fallback should be >= 6 digits with
 //       "erase after 10 attempts" enabled in macOS settings.
 //     - PKCS#11 (YubiKey/Nitrokey): token-side PIN lockout (default: 3 tries
 //       before lock). Use a PIN of >= 8 characters; prefer a random passphrase
@@ -43,8 +43,8 @@
 //
 // API HONESTY CONTRACT:
 //   detect() and wrappingBackend() answer two DIFFERENT questions:
-//     - detect().backend        → which hardware is PRESENT on this machine.
-//     - wrappingBackend()       → which backend wrapKey() will ACTUALLY use.
+//     - detect().backend        -> which hardware is PRESENT on this machine.
+//     - wrappingBackend()       -> which backend wrapKey() will ACTUALLY use.
 //   Today all wrapKey() implementations route to the software stub (Stub),
 //   regardless of which hardware detect() reports. These two values will only
 //   converge once a real hardware implementation replaces the stub routing.
@@ -61,18 +61,18 @@
 namespace HwKey {
 
 // ---------------------------------------------------------------------------
-// Backend enumeration — which hardware (or software fallback) is active.
+// Backend enumeration - which hardware (or software fallback) is active.
 //
 // Distinction between None and Stub:
-//   None  — No hardware crypto available AND the software fallback is also
+//   None  - No hardware crypto available AND the software fallback is also
 //            not in use (e.g., key-wrapping entirely disabled). The caller
 //            should inform the user that hardware key protection is unavailable
 //            and fall back to password-derived key protection only.
-//   Stub  — Software-only AEAD wrap using a per-installation key stored at
+//   Stub  - Software-only AEAD wrap using a per-installation key stored at
 //            ~/.config/opencryptui/.opencryptui-stubkey (mode 0600). Provides
 //            correct AEAD integrity (tamper detection) and DEK confidentiality
 //            against unprivileged third parties, but is NOT hardware-bound.
-//            The wrapping key lives in the filesystem — an attacker with local
+//            The wrapping key lives in the filesystem - an attacker with local
 //            read access can recover it.
 // ---------------------------------------------------------------------------
 enum class Backend {
@@ -85,19 +85,19 @@ enum class Backend {
 };
 
 // ---------------------------------------------------------------------------
-// Capabilities — result of detect(). Cheap struct, always fully populated.
+// Capabilities - result of detect(). Cheap struct, always fully populated.
 //
 // Fields:
-//   backend         — which hardware is PRESENT (may differ from what
-//                     wrapKey() actually uses — see effectiveBackend).
-//   effectiveBackend — what wrapKey() will ACTUALLY route to right now.
+//   backend         - which hardware is PRESENT (may differ from what
+//                     wrapKey() actually uses - see effectiveBackend).
+//   effectiveBackend - what wrapKey() will ACTUALLY route to right now.
 //                      Until real hardware implementations land, this is
 //                      always Backend::Stub regardless of backend.
-//   supportsKeyWrap — true only when a REAL hardware wrap is implemented and
+//   supportsKeyWrap - true only when a REAL hardware wrap is implemented and
 //                     wrapKey() calls into actual TPM/SE/PKCS#11 APIs.
 //                     Always false in the current scaffolding phase.
-//   supportsSign    — true when hardware-resident signing is implemented.
-//   device_name     — human-readable description for UI display.
+//   supportsSign    - true when hardware-resident signing is implemented.
+//   device_name     - human-readable description for UI display.
 //
 // WARNING: supportsKeyWrap == false means wrapKey() goes through the software
 // stub even when backend reports a hardware device. Do NOT display
@@ -112,7 +112,7 @@ struct Capabilities {
 };
 
 // ---------------------------------------------------------------------------
-// detect() — probe available hardware. Safe to call on every startup.
+// detect() - probe available hardware. Safe to call on every startup.
 //   Returns a fully-populated Capabilities struct.
 //
 //   IMPORTANT: caps.backend reports what hardware is PRESENT. It does NOT
@@ -122,7 +122,7 @@ struct Capabilities {
 Capabilities detect();
 
 // ---------------------------------------------------------------------------
-// wrappingBackend() — return the backend that wrapKey() will ACTUALLY use.
+// wrappingBackend() - return the backend that wrapKey() will ACTUALLY use.
 //
 //   Today this always returns Backend::Stub because all platform TUs still
 //   delegate wrapKey() to the software stub. When a real hardware
@@ -135,13 +135,13 @@ Capabilities detect();
 Backend wrappingBackend();
 
 // ---------------------------------------------------------------------------
-// wrapKey() — wrap an in-memory data-encryption-key (DEK).
+// wrapKey() - wrap an in-memory data-encryption-key (DEK).
 //
-//   dek        — raw key bytes to protect (typically 32 bytes / 256 bit AES).
-//   errorOut   — if non-null and wrapping fails, receives a human-readable
+//   dek        - raw key bytes to protect (typically 32 bytes / 256 bit AES).
+//   errorOut   - if non-null and wrapping fails, receives a human-readable
 //                message suitable for display in a dialog or log entry.
 //
-//   Returns:   — opaque blob to be persisted alongside the encrypted file.
+//   Returns:   - opaque blob to be persisted alongside the encrypted file.
 //                Blob layout (wrappedBlob_v2, uniform across all backends):
 //
 //                  [ randomNonce  12 bytes  ]
@@ -152,7 +152,7 @@ Backend wrappingBackend();
 //                from .opencryptui-stubkey). Inside the AEAD envelope the
 //                plaintext is: backendBlob || backendId (1 byte). This means
 //                every wrapped blob looks like 12 nonce bytes + random
-//                ciphertext + 16 tag bytes to a forensic scan — no
+//                ciphertext + 16 tag bytes to a forensic scan - no
 //                backend-distinguishing structure is visible.
 //
 //                Returns empty QByteArray on failure (errorOut is set).
@@ -164,14 +164,14 @@ Backend wrappingBackend();
 QByteArray wrapKey(const QByteArray& dek, QString* errorOut = nullptr);
 
 // ---------------------------------------------------------------------------
-// unwrapKey() — recover a DEK from a previously-wrapped blob.
+// unwrapKey() - recover a DEK from a previously-wrapped blob.
 //
-//   wrappedBlob — blob previously returned by wrapKey().
-//   errorOut    — if non-null and unwrapping fails, receives a human-readable
+//   wrappedBlob - blob previously returned by wrapKey().
+//   errorOut    - if non-null and unwrapping fails, receives a human-readable
 //                 message. Common reasons: wrong device, PCR mismatch (TPM),
 //                 wrong PIN/biometric, tampered blob (AEAD tag mismatch).
 //
-//   Returns:    — original DEK bytes on success.
+//   Returns:    - original DEK bytes on success.
 //                Returns empty QByteArray on failure (errorOut is set).
 // ---------------------------------------------------------------------------
 QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut = nullptr);

@@ -1,14 +1,14 @@
 // Deniable container + hidden volume test, with a FORENSIC indistinguishability
-// check — the whole point of a hidden volume is that its existence can't be
+// check - the whole point of a hidden volume is that its existence can't be
 // proven. A hidden volume that's detectable is worse than none (false
 // confidence under coercion), so this test is the acceptance gate.
 //
 // Asserts:
-//   1. Outer-only container round-trips (create → open with outer pw → data).
+//   1. Outer-only container round-trips (create -> open with outer pw -> data).
 //   2. Outer+hidden: outer pw yields the decoy, hidden pw yields the real data.
 //   3. FORENSIC: an outer-only container and an outer+hidden container, created
 //      with the SAME outer password/data/size, are statistically
-//      indistinguishable — the hidden header slot and the tail are
+//      indistinguishable - the hidden header slot and the tail are
 //      high-entropy in BOTH, so an examiner with only the outer password
 //      cannot tell a hidden volume exists.
 //   4. No plaintext markers anywhere on disk.
@@ -47,7 +47,7 @@ static QByteArray readAll(const QString& p)
     QFile f(p); if (!f.open(QIODevice::ReadOnly)) return {}; return f.readAll();
 }
 
-// Shannon entropy (bits/byte) of a region — random/ciphertext ≈ 8.0.
+// Shannon entropy (bits/byte) of a region - random/ciphertext ~ 8.0.
 static double entropy(const QByteArray& d, int off, int len)
 {
     if (off + len > d.size()) len = d.size() - off;
@@ -107,11 +107,11 @@ int main(int argc, char** argv)
         check(ok, ("hidden create" + (ok ? QString() : ": " + err)).toUtf8().constData());
 
         auto ro = DeniableContainer::open(eng, c2, outerPw, kdf, iters);
-        check(ro.ok && ro.kind == DeniableContainer::VolumeKind::Outer, "hidden: outer pw → Outer volume");
+        check(ro.ok && ro.kind == DeniableContainer::VolumeKind::Outer, "hidden: outer pw -> Outer volume");
         check(ro.data == outerData, "hidden: outer pw yields decoy data");
 
         auto rh = DeniableContainer::open(eng, c2, hiddenPw, kdf, iters);
-        check(rh.ok && rh.kind == DeniableContainer::VolumeKind::Hidden, "hidden: hidden pw → Hidden volume");
+        check(rh.ok && rh.kind == DeniableContainer::VolumeKind::Hidden, "hidden: hidden pw -> Hidden volume");
         check(rh.data == hiddenData, "hidden: hidden pw yields real data");
 
         // Cross-checks: neither password reaches the other's data.
@@ -127,7 +127,7 @@ int main(int argc, char** argv)
         check(a.size() == b.size(), "both containers identical size");
 
         // Hidden header slot [64KiB,128KiB): high entropy in BOTH (random vs
-        // encrypted header — indistinguishable).
+        // encrypted header - indistinguishable).
         double eaHdr = entropy(a, int(DeniableContainer::HIDDEN_HDR_OFF), 65536);
         double ebHdr = entropy(b, int(DeniableContainer::HIDDEN_HDR_OFF), 65536);
         check(eaHdr > 7.9, "outer-only: hidden-header region looks random (H>7.9)");
@@ -140,7 +140,7 @@ int main(int argc, char** argv)
         check(eaTail > 7.9, "outer-only: tail looks random (H>7.9)");
         check(ebTail > 7.9, "with-hidden: tail (hidden data) looks random (H>7.9)");
 
-        // The two regions' entropies must be close — no statistical tell.
+        // The two regions' entropies must be close - no statistical tell.
         check(std::fabs(eaHdr - ebHdr) < 0.05, "hidden-header entropy indistinguishable");
         check(std::fabs(eaTail - ebTail) < 0.05, "tail entropy indistinguishable");
     }
@@ -149,7 +149,7 @@ int main(int argc, char** argv)
     {
         QByteArray b = readAll(c2);
         // Scan for THIS format's real 8-byte magic "OCUIVOL1" (chance collision
-        // ~2^-64, negligible). NOT a bare 4-byte "OCUI" — that's a different
+        // ~2^-64, negligible). NOT a bare 4-byte "OCUI" - that's a different
         // format's marker and would collide ~0.2% of runs in 8 MiB of random
         // data (a false-positive flake, not a real leak).
         check(findSeq(b, "OCUIVOL1", 8) == -1, "no 'OCUIVOL1' magic in plaintext on disk");

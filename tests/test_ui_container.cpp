@@ -70,7 +70,7 @@ void TestOpenCryptUI::testContainerCreateOpen()
         QCOMPARE(written.size(), 5);
         for (const QString& w : written) QVERIFY(QFile::exists(w));
 
-        // Recover from any 3 shares → original password → opens the container.
+        // Recover from any 3 shares -> original password -> opens the container.
         QString recovered; QString re;
         bool rok = mainWindow->recoverPasswordFromShares(
             {written[0], written[2], written[4]}, &recovered, &re);

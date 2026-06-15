@@ -11,10 +11,10 @@
 //   - The window resized to 800x600 to surface layout regressions.
 //   - The static help/about QMessageBox dialogs (About, About Ciphers,
 //     About KDFs, About Iterations, Security Guide, Preferences). These
-//     are modal — we screenshot them via a one-shot QTimer that finds
+//     are modal - we screenshot them via a one-shot QTimer that finds
 //     the active modal widget and grabs+closes it.
 //
-// Not part of CTest — compile and run ad-hoc.
+// Not part of CTest - compile and run ad-hoc.
 
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
@@ -90,7 +90,7 @@ QString slugify(const QString &s)
 }
 
 // Walk the visible tab pane for nested QTabWidgets and screenshot each
-// of THEIR sub-tabs as well. We only descend one level — the UI doesn't
+// of THEIR sub-tabs as well. We only descend one level - the UI doesn't
 // nest deeper than that.
 void captureNestedTabs(QWidget *pane, const QString &topPrefix)
 {
@@ -153,7 +153,7 @@ int main(int argc, char **argv)
     QDir().mkpath(kOutDir);
 
     MainWindow w;
-    w.resize(1200, 850); // generous default — tab content is busy
+    w.resize(1200, 850); // generous default - tab content is busy
     w.show();
     pumpEvents(16);
 
@@ -179,7 +179,7 @@ int main(int argc, char **argv)
         captureNestedTabs(top->currentWidget(), prefix);
     }
 
-    // 3. Benchmark tab populated with synthetic rows — this is the visual
+    // 3. Benchmark tab populated with synthetic rows - this is the visual
     //    proof the empty-rows bug is fixed. updateBenchmarkTable is a
     //    public-ish slot exposed via the header.
     {
@@ -218,7 +218,7 @@ int main(int argc, char **argv)
         savePng(&w, "tab3_benchmark_populated");
     }
 
-    // 4. Resized small (800x600) — check layout doesn't break.
+    // 4. Resized small (800x600) - check layout doesn't break.
     {
         // Reset to first tab so the screenshot is comparable.
         top->setCurrentIndex(0);
@@ -226,7 +226,7 @@ int main(int argc, char **argv)
         w.resize(800, 600);
         pumpEvents(16);
         savePng(&w, "mainwindow_800x600_disk");
-        // Also small-shot the file tab — the file tab is the most cramped.
+        // Also small-shot the file tab - the file tab is the most cramped.
         for (int i = 0; i < top->count(); ++i) {
             if (top->tabText(i).contains("File", Qt::CaseInsensitive)
                 && !top->tabText(i).contains("Folder", Qt::CaseInsensitive))

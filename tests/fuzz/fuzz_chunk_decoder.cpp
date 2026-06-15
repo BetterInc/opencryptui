@@ -3,14 +3,14 @@
 // libFuzzer harness for EncryptionEngine::decryptChunk (v3 per-chunk AEAD).
 //
 // decryptChunk is a private static method, so we cannot call it directly.
-// Instead we drive it through the public decryptFile → cryptOperationV3Decrypt
-// → decryptChunk stack with a carefully constructed v3-shaped file blob.
+// Instead we drive it through the public decryptFile -> cryptOperationV3Decrypt
+// -> decryptChunk stack with a carefully constructed v3-shaped file blob.
 // This exercises the full decode path including chunk-framing (chunk_size,
 // chunk_count), per-chunk GCM tag verification, and buildChunkNonce.
 //
 // Fuzzing strategy: the fuzz input is split as:
-//   byte[0]  — control byte (trailer mode + chunk count)
-//   byte[1..] — chunk payload bytes (fuzz-controlled ciphertext + tag)
+//   byte[0]  - control byte (trailer mode + chunk count)
+//   byte[1..] - chunk payload bytes (fuzz-controlled ciphertext + tag)
 //
 // Invariant: never crash; always return empty QByteArray for bad tag/key.
 
@@ -51,7 +51,7 @@ static constexpr quint32 MIN_PBKDF2_ITERS   = 600000u;
 //   [optional SIG_ stub trailer(12)]
 //
 // Two trailer modes:
-//   mode 0: no trailer — engine rejects at "no Ed25519 signature" check.
+//   mode 0: no trailer - engine rejects at "no Ed25519 signature" check.
 //   mode 1: stub SIG_ trailer with sigLen=0, CRC32(empty)=0x00000000.
 //           Exercises the trailer magic/length/CRC parse path in
 //           verifySignature before the Ed25519 body check.
@@ -74,7 +74,7 @@ static QByteArray buildV3File(const uint8_t* chunkData, size_t chunkSize,
     ds << quint8(0); // reserved
     ds << MIN_PBKDF2_ITERS;
 
-    // 32-byte salt + 12-byte base_iv (all zeros — key derivation will still
+    // 32-byte salt + 12-byte base_iv (all zeros - key derivation will still
     // run with a deterministic result, which is fine for fuzzing purposes)
     for (int i = 0; i < 44; ++i) ds << quint8(0);
 
@@ -131,7 +131,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 
     // Extract a 1-byte control header so the fuzzer can control:
     //   bit 0: trailer mode (0 = none, 1 = stub SIG_)
-    //   bits 1-2: chunkCount hint (0..3 → 1..4 chunks; we clamp to avoid huge loops)
+    //   bits 1-2: chunkCount hint (0..3 -> 1..4 chunks; we clamp to avoid huge loops)
     const uint8_t ctrl       = data[0];
     const int     trailerMode = (ctrl & 0x01);
     const quint32 chunkCount  = static_cast<quint32>((ctrl >> 1 & 0x03) + 1);
@@ -151,7 +151,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
     // Use AES-256-GCM (v3 AEAD requirement).  decryptFile will:
     //   1. Parse the OCUI header (magic, version, alg/kdf cross-check).
     //   2. Read salt + base_iv.
-    //   3. Derive keys (PBKDF2 with MIN_PBKDF2_ITERS — slow but correct).
+    //   3. Derive keys (PBKDF2 with MIN_PBKDF2_ITERS - slow but correct).
     //   4. Call cryptOperationV3Decrypt, which:
     //      a. Opens a second fd and looks for the SIG_ trailer.
     //      b. Reads chunk_size and chunk_count from the framing header.

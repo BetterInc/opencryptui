@@ -1,4 +1,4 @@
-// hwkey_linux.cpp — Linux TPM 2.0 hardware key wrapping (scaffolding).
+// hwkey_linux.cpp - Linux TPM 2.0 hardware key wrapping (scaffolding).
 //
 // BACKEND: LinuxTPM2 via tpm2-tss (ESAPI / FAPI).
 //
@@ -8,7 +8,7 @@
 //   RM). We also check read/write access so we don't falsely advertise the
 //   backend when the process lacks permission (common in containers/CI).
 //
-// CURRENT STATUS — SCAFFOLDING:
+// CURRENT STATUS - SCAFFOLDING:
 //   detect() probes /dev/tpmrm0 and returns LinuxTPM2 in the backend field if
 //   available, None otherwise. HOWEVER, supportsKeyWrap is ALWAYS false and
 //   effectiveBackend is ALWAYS Backend::Stub, because wrapKey/unwrapKey still
@@ -90,7 +90,7 @@ QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut);
 static constexpr char kTpmDevice[] = "/dev/tpmrm0";
 
 // ---------------------------------------------------------------------------
-// probeTPM() — return true iff /dev/tpmrm0 exists and is accessible.
+// probeTPM() - return true iff /dev/tpmrm0 exists and is accessible.
 // ---------------------------------------------------------------------------
 static bool probeTPM()
 {
@@ -107,7 +107,7 @@ static bool probeTPM()
 }
 
 // ---------------------------------------------------------------------------
-// detect() — Linux implementation.
+// detect() - Linux implementation.
 //
 //   Returns backend = LinuxTPM2 when /dev/tpmrm0 is accessible, reporting
 //   that hardware IS present. However, supportsKeyWrap is always false and
@@ -125,7 +125,7 @@ Capabilities detect()
             /*device_name=*/    QLatin1String("TPM 2.0 (/dev/tpmrm0)")
         };
     }
-    // No TPM accessible — report None and fall back to stub/password-only.
+    // No TPM accessible - report None and fall back to stub/password-only.
     return Capabilities{
         /*backend=*/        Backend::None,
         /*effectiveBackend=*/Backend::Stub,
@@ -136,7 +136,7 @@ Capabilities detect()
 }
 
 // ---------------------------------------------------------------------------
-// wrapKey() — Linux implementation.
+// wrapKey() - Linux implementation.
 //
 //   API CONTRACT: delegates to the software stub. wrappingBackend() == Stub.
 //   Even when /dev/tpmrm0 is present, this function uses the software fallback
@@ -152,7 +152,7 @@ QByteArray wrapKey(const QByteArray& dek, QString* errorOut)
 }
 
 // ---------------------------------------------------------------------------
-// unwrapKey() — Linux implementation.
+// unwrapKey() - Linux implementation.
 //   Scaffolding: delegates to stub until real tpm2-tss calls are in place.
 // ---------------------------------------------------------------------------
 QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut)

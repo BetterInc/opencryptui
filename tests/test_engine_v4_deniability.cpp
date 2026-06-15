@@ -1,4 +1,4 @@
-// OCUI v4 deniability test — the headline test for the threat model.
+// OCUI v4 deniability test - the headline test for the threat model.
 //
 // Encrypted AEAD files must look like random data to a forensic examiner.
 // Non-AEAD files (CBC/CTR) stay on v2 by design; they explicitly do NOT
@@ -12,10 +12,10 @@
 //      the entire file (not just the head). Byte distribution of the
 //      head is roughly uniform.
 //   2. Non-AEAD cipher (AES-256-CBC) DOES have OCUI at offset 0 and
-//      DOES have a SIG_ trailer — this is the v2 contract. If this
+//      DOES have a SIG_ trailer - this is the v2 contract. If this
 //      assertion ever flips, someone has changed the v2 path and we
 //      need to re-evaluate what users in CBC mode are getting.
-//   3. Same plaintext + different password → uncorrelated headers.
+//   3. Same plaintext + different password -> uncorrelated headers.
 //   4. Round-trip: byte-identical recovery for every cipher.
 //   5. Wrong-password rejection: returns false, no plaintext on disk.
 //   6. Tampered salt region: rejected, no plaintext on disk.
@@ -113,7 +113,7 @@ static QString roundTripAndReturnCt(EncryptionEngine& eng,
                               false, QString());
     char buf[128];
     std::snprintf(buf, sizeof(buf), "%s: encrypt", label);
-    // check() returns 0 on PASS, 1 on FAIL — bail only when the value is non-zero.
+    // check() returns 0 on PASS, 1 on FAIL - bail only when the value is non-zero.
     if (check(ok, buf) != 0) return {};
 
     QFile::remove(plain);
@@ -155,7 +155,7 @@ static void aeadDeniabilityCheck(const QString& ct, const char* label)
     QByteArray head = whole.left(256);
     check(looksRandom(head), buf);
 
-    // First 4 bytes must NOT be a TPM2 ASN.1 prefix (defensive — we don't
+    // First 4 bytes must NOT be a TPM2 ASN.1 prefix (defensive - we don't
     // produce TPM blobs here but if HwKey wrapping ever lands inside the
     // file, this check would catch a regression that exposed it).
     static const unsigned char tpm2_prefix[] = {0x80, 0x01, 0x00, 0x01};
@@ -166,7 +166,7 @@ static void aeadDeniabilityCheck(const QString& ct, const char* label)
 }
 
 // Run the contract check on a non-AEAD (v2) file: it MUST have the OCUI
-// magic at offset 0 and a SIG_ trailer. This is documented behaviour —
+// magic at offset 0 and a SIG_ trailer. This is documented behaviour -
 // CBC/CTR can't be deniable without an outer AEAD wrap. Asserting it
 // ensures a future change that flips this behaviour gets noticed.
 static void v2NonDeniabilityCheck(const QString& ct, const char* label)
@@ -207,7 +207,7 @@ int main(int argc, char** argv)
     }
 
     // -----------------------------------------------------------------------
-    // 2. Non-AEAD cipher: documented v2 contract — NOT deniable.
+    // 2. Non-AEAD cipher: documented v2 contract - NOT deniable.
     // -----------------------------------------------------------------------
     {
         QString ct = roundTripAndReturnCt(eng, dir.path(), "AES-256-CBC",
@@ -216,7 +216,7 @@ int main(int argc, char** argv)
     }
 
     // -----------------------------------------------------------------------
-    // 3. Same plaintext + different password → uncorrelated heads.
+    // 3. Same plaintext + different password -> uncorrelated heads.
     // -----------------------------------------------------------------------
     {
         const QString p1 = dir.filePath("salt1_plain.bin");

@@ -1,8 +1,8 @@
-// test_pq_hybrid.cpp — Integration tests for PqHybrid key-wrapping.
+// test_pq_hybrid.cpp - Integration tests for PqHybrid key-wrapping.
 //
 // Test plan:
 //   1. If PqHybrid::isAvailable() returns false, print a skip message and
-//      exit 0 — the project builds without liboqs by design.
+//      exit 0 - the project builds without liboqs by design.
 //   2. generateKeyPair() returns correctly-sized fields.
 //   3. Round-trip: wrap a 32-byte random DEK, unwrap it, verify byte equality.
 //   4. Tampering with classicalBlob causes unwrap to fail gracefully.
@@ -10,7 +10,7 @@
 //   6. Wrong classicalSecret causes unwrap to fail gracefully.
 //   7. Wrong pqSecret causes unwrap to fail gracefully.
 //
-// No UI, no filesystem I/O — pure unit test of the PqHybrid primitives.
+// No UI, no filesystem I/O - pure unit test of the PqHybrid primitives.
 
 #include "pq_hybrid.h"
 
@@ -162,7 +162,7 @@ static void testWrongClassicalSecret()
     PqHybrid::HybridWrappedKey blob = PqHybrid::wrap(dek, kp.classicalPublic, kp.pqPublic);
 
     QString err;
-    // Use wrong classical secret but correct pq secret — should fail.
+    // Use wrong classical secret but correct pq secret - should fail.
     QByteArray recovered = PqHybrid::unwrap(blob,
                                              wrongKp.classicalSecret,
                                              kp.pqSecret,
@@ -170,7 +170,7 @@ static void testWrongClassicalSecret()
 
     check(recovered.isEmpty(), "wrong classicalSecret: unwrap returns empty DEK");
     // Note: error may or may not be populated depending on where the failure
-    // manifests (AES-GCM auth failure or DEK mismatch) — we only check emptiness.
+    // manifests (AES-GCM auth failure or DEK mismatch) - we only check emptiness.
 }
 
 static void testWrongPqSecret()
@@ -181,7 +181,7 @@ static void testWrongPqSecret()
     PqHybrid::HybridWrappedKey blob = PqHybrid::wrap(dek, kp.classicalPublic, kp.pqPublic);
 
     QString err;
-    // Use correct classical secret but wrong pq secret — should fail.
+    // Use correct classical secret but wrong pq secret - should fail.
     QByteArray recovered = PqHybrid::unwrap(blob,
                                              kp.classicalSecret,
                                              wrongKp.pqSecret,

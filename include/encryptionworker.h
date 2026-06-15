@@ -40,7 +40,7 @@ signals:
     void benchmarkResultReady(int iterations, double mbps, double ms,
                              const QString &algorithm, const QString &kdf);
     // Emitted once, after every cipher/KDF combo has been measured. The UI
-    // waits for this before declaring a final "✓ Recommended" config.
+    // waits for this before declaring a final "OK Recommended" config.
     void benchmarkFinished();
 
 private:
@@ -49,7 +49,7 @@ private:
     // boundaries and through encrypt+decrypt operations, so they're our
     // longest-lived secrets in process memory. SecureString mlocks the buffer
     // (no swap) and zeros on destruction (no LTO elision). The UI / setter
-    // boundary still accepts QString — there's exactly one short-lived
+    // boundary still accepts QString - there's exactly one short-lived
     // QString copy (the caller's) that we can't wipe, but the worker's own
     // copy is protected.
     SecureString m_password;

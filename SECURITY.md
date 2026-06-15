@@ -1,4 +1,4 @@
-# Security Policy — OpenCryptUI
+# Security Policy - OpenCryptUI
 
 ## Threat Model
 
@@ -11,7 +11,7 @@ branding, etc.).
 ### What OpenCryptUI protects against
 
 - Opportunistic attackers who obtain an encrypted file without the passphrase.
-- Casual forensic examination — `binwalk`, `strings`, `file` — of storage media.
+- Casual forensic examination - `binwalk`, `strings`, `file` - of storage media.
 - A compromised endpoint reading stale memory (we mlock + zero secrets where possible).
 - Tampering with encrypted files (Ed25519 signature + per-chunk AEAD detect any byte flip).
 - A device thief who has the disk but not the passphrase (Argon2id ~1 GiB cost).
@@ -21,24 +21,24 @@ branding, etc.).
 - Nation-state adversaries with physical access to a running machine: cold-boot,
   DMA, or hardware-implant attacks.
 - Quantum adversaries running Shor's algorithm (PQ hybrid is scaffolded, not yet
-  wired into the production format — see Post-Quantum section).
+  wired into the production format - see Post-Quantum section).
 - Kernel-level malware / rootkits / firmware implants that read process memory or
   intercept passphrase entry.
 - Passphrase-extraction attacks: keyloggers, shoulder surfing, social engineering,
   rubber-hose cryptanalysis.
 - Metadata: filenames, sizes, mtime, and directory structure are NOT encrypted.
 
-### Discoverability — what an attacker CAN learn
+### Discoverability - what an attacker CAN learn
 
 This matters for plausible deniability. Honest accounting of what's visible:
 
 | Surface | Currently visible? | Mitigation status |
 |---|---|---|
-| Plaintext "OCUI" magic at file offset 0 | depends on format | **v4 (default for AEAD) has NO magic** — file is salt‖iv‖ciphertext, indistinguishable from random. v2 (CBC/CTR) still has the magic. Deniable containers have no magic anywhere. |
-| File length pattern (chunked AEAD has predictable per-chunk overhead) | YES | inherent — accept it |
+| Plaintext "OCUI" magic at file offset 0 | depends on format | **v4 (default for AEAD) has NO magic** - file is salt||iv||ciphertext, indistinguishable from random. v2 (CBC/CTR) still has the magic. Deniable containers have no magic anywhere. |
+| File length pattern (chunked AEAD has predictable per-chunk overhead) | YES | inherent - accept it |
 | Existence of OpenCryptUI binary on disk reveals tool choice | YES | future `OCUI_STEALTH=ON` build option strips identifying strings |
-| TPM use (any Backend other than `None`) | leak via TPM2_BLOB structure | **see Hardware Backends below — TPM is NOT recommended for this threat model** |
-| YubiKey use | leak only via "user owns a YubiKey" — token is portable + destructible | recommended hardware path |
+| TPM use (any Backend other than `None`) | leak via TPM2_BLOB structure | **see Hardware Backends below - TPM is NOT recommended for this threat model** |
+| YubiKey use | leak only via "user owns a YubiKey" - token is portable + destructible | recommended hardware path |
 | Software-only encryption | leaves no hardware fingerprint | **default and recommended** |
 
 ---
@@ -58,7 +58,7 @@ They are not on the CNSA 2.0 approved list and provide no authenticated encrypti
 
 ---
 
-## Advanced features — security properties
+## Advanced features - security properties
 
 ### Cipher cascades
 Each chunk is encrypted through an ordered list of AEAD ciphers (e.g.
@@ -71,7 +71,7 @@ magic-free. The recipe id is bound into the authenticated inner header (no
 recipe-confusion/downgrade).
 
 ### Deniable containers & hidden volumes
-A fixed-size container whose every byte is random/ciphertext — no magic. Two
+A fixed-size container whose every byte is random/ciphertext - no magic. Two
 64 KiB header slots (outer @0, hidden @64 KiB) are *always* present; an absent
 hidden header is just the random fill, indistinguishable from an encrypted one.
 A password opens whichever slot its key + embedded magic validate: the outer
@@ -86,7 +86,7 @@ not used.
 ### Mountable volumes / on-the-fly encryption
 `BlockVolume` is an authenticated random-access block device. Because a mounted
 volume rewrites blocks in place, a deterministic per-index nonce would be
-reused across writes — catastrophic for AES-GCM — so **every block write picks
+reused across writes - catastrophic for AES-GCM - so **every block write picks
 a fresh random 96-bit nonce stored alongside the block**. Each (key, nonce)
 pair is used once. The FUSE driver only ever exposes decrypted bytes through
 the mount; the backing file/device holds ciphertext only (verified end-to-end).
@@ -111,9 +111,9 @@ than "hardware = better". Each backend leaves a different forensic fingerprint:
 
 | Backend | "Owns this hardware" signal | On-disk blob fingerprint | Device-seizure recovery | Status |
 |---|---|---|---|---|
-| **Software-only** | none | none — looks like random data | n/a — keys are passphrase-derived, you carry the passphrase | **default**, fully working |
-| **TPM 2.0** (Linux/Windows/Mac) | **none** — TPM is now in nearly every device made after 2018, mandated by Windows 11 | TPM2_PUBLIC structure recognisable on disk **unless we wrap it inside our own format** | bad — keys stay on the seized device | scaffolded, real wiring TBD |
-| **YubiKey / PKCS#11** | **strong** — only ~10–15M units globally; possession of a token is itself a signal | recognisable as PKCS#11 wrap unless wrapped-inside-our-format | good — token is portable, can be hidden / palmed / destroyed | scaffolded, real wiring TBD |
+| **Software-only** | none | none - looks like random data | n/a - keys are passphrase-derived, you carry the passphrase | **default**, fully working |
+| **TPM 2.0** (Linux/Windows/Mac) | **none** - TPM is now in nearly every device made after 2018, mandated by Windows 11 | TPM2_PUBLIC structure recognisable on disk **unless we wrap it inside our own format** | bad - keys stay on the seized device | scaffolded, real wiring TBD |
+| **YubiKey / PKCS#11** | **strong** - only ~10-15M units globally; possession of a token is itself a signal | recognisable as PKCS#11 wrap unless wrapped-inside-our-format | good - token is portable, can be hidden / palmed / destroyed | scaffolded, real wiring TBD |
 
 ### What each option is good for
 
@@ -123,7 +123,7 @@ than "hardware = better". Each backend leaves a different forensic fingerprint:
 
 - **TPM**: protects against an attacker who has the disk but not the booted
   laptop. The "user has a TPM" signal is essentially null because everyone
-  does — Windows 11 requires it, all Apple Silicon Macs have a Secure
+  does - Windows 11 requires it, all Apple Silicon Macs have a Secure
   Enclave, every recent Intel/AMD has fTPM. The risk is the on-disk wrapped
   blob fingerprinting as TPM2_PUBLIC. We mitigate that by **wrapping the
   TPM blob inside our own AEAD-encrypted format**, so a forensic scan sees
@@ -131,7 +131,7 @@ than "hardware = better". Each backend leaves a different forensic fingerprint:
 
 - **YubiKey/PKCS#11**: best for users who travel with their keys and need to
   separate the "decrypt-capable" hardware from the laptop. The trade-off
-  is that **token possession itself is a signal** — owning a YubiKey is
+  is that **token possession itself is a signal** - owning a YubiKey is
   much rarer than owning a TPM-equipped laptop, and a forensic examiner
   finding a YubiKey on you flags above-average opsec. Acceptable for
   threat models where you control whether the token is found at all
@@ -142,7 +142,7 @@ than "hardware = better". Each backend leaves a different forensic fingerprint:
 
 For either TPM or PKCS#11 to be deniability-acceptable, the wrapped key
 blob produced by the hardware MUST be encrypted inside our own file
-format — not stored as recognisable TPM2 / PKCS#11 ASN.1 on disk. Format
+format - not stored as recognisable TPM2 / PKCS#11 ASN.1 on disk. Format
 v4 (planned) does this; until then, hardware backends should not be used
 in deniability-sensitive scenarios.
 
@@ -154,7 +154,7 @@ or `WindowsTPM` if the underlying hardware is present, but
 path. The API surface lies. This is being corrected: either the platform
 backends get real implementations or the detection is suppressed until
 they do. Track the active state via the runtime `HwKey::Capabilities`
-struct's `supportsKeyWrap` field — that one is honest.
+struct's `supportsKeyWrap` field - that one is honest.
 
 ---
 
@@ -205,7 +205,7 @@ All current ciphers are classical:
 
 **Harvest-now, decrypt-later risk**: Ciphertext encrypted today with AES-256-GCM
 retains ~128 bits of PQ security. Ciphertext encrypted with AES-128 variants
-retains ~64 bits — insufficient against a quantum adversary.
+retains ~64 bits - insufficient against a quantum adversary.
 
 **Planned roadmap**: Hybrid ML-KEM (Kyber) + Ed25519 for key encapsulation, and
 ML-DSA (Dilithium) for signing, once stable Qt/OpenSSL integration is available.
@@ -250,7 +250,7 @@ and encryption keys as sharing the same root secret.
 
 3. **Cipher choice**: Prefer AES-256-GCM or ChaCha20-Poly1305 (AEAD modes that
    provide both confidentiality and integrity). Avoid CBC and CTR modes unless
-   interoperability requires them — they provide no built-in authentication.
+   interoperability requires them - they provide no built-in authentication.
 
 4. **Keyfiles**: Store keyfiles on a separate physical medium (e.g., USB token)
    where possible. A keyfile stored alongside the encrypted file provides no

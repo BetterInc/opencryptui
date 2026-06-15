@@ -76,7 +76,7 @@ Shamir::SplitResult Shamir::split(const QByteArray& secret, int n, int k)
         share[0] = static_cast<char>(x);
         quint8* Y = reinterpret_cast<quint8*>(share.data()) + 1;
         for (int b = 0; b < m; ++b) {
-            // Horner: f(x) = (((c_{k-1} x + c_{k-2}) x + …) x + c_0
+            // Horner: f(x) = (((c_{k-1} x + c_{k-2}) x + ...) x + c_0
             quint8 acc = 0;
             for (int deg = k - 1; deg >= 1; --deg)
                 acc = static_cast<quint8>(gmul(acc, x) ^ C[(deg - 1) * m + b]);
@@ -143,7 +143,7 @@ Shamir::CombineResult Shamir::combine(const QVector<QByteArray>& shares)
     const bool good = (checksum4(secret) == cks);
     if (!good) {
         sodium_memzero(blob.data(), blob.size());
-        return fail("Reconstruction failed — wrong, corrupted, or too few shares.");
+        return fail("Reconstruction failed - wrong, corrupted, or too few shares.");
     }
 
     r.secret = secret;

@@ -130,7 +130,7 @@ bool EncryptionEngine::decompressFolder(const QString& filePath, const QString& 
     return success;
 }
 
-// QString convenience wrapper — converts to mlocked SecureString and
+// QString convenience wrapper - converts to mlocked SecureString and
 // delegates. Used by tests, the benchmark path, and any non-UI caller.
 bool EncryptionEngine::encryptFile(const QString& filePath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths) {
     SecureString sp = SecureString::from_qstring(password);

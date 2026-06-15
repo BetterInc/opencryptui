@@ -3,18 +3,18 @@
 // Unit tests for SecureLogger::sanitizeMessage() value-aware redaction.
 //
 // Test cases:
-//   TC1  "salt: <64-hex>"            — hex value after colon masked
-//   TC2  "iv=<mixed-case hex>"       — equals-form, mixed-case hex masked
-//   TC3  "the password is hunter2"   — non-hex value NOT masked (plaintext word)
-//   TC4  Bare 64-char hex string     — free-floating long hex masked
-//   TC5  "no secret here"            — unchanged, no sensitive data
-//   TC6  Short hex "id: 1234"        — short hex (<16 hex chars) NOT masked
-//   TC7  Empty string                — returns empty string
-//   TC8  "key (hex): <32-hex>"       — parenthesised form masked
-//   TC9  "token (base64): <b64>"     — base64 form masked
-//   TC10 Bare 44-char base64         — free-floating long base64 masked
-//   TC11 "Generated salt (hex): <64-hex>" — original bug scenario fixed
-//   TC12 Size annotation in output   — <REDACTED:N-bytes> encodes correct N
+//   TC1  "salt: <64-hex>"            - hex value after colon masked
+//   TC2  "iv=<mixed-case hex>"       - equals-form, mixed-case hex masked
+//   TC3  "the password is hunter2"   - non-hex value NOT masked (plaintext word)
+//   TC4  Bare 64-char hex string     - free-floating long hex masked
+//   TC5  "no secret here"            - unchanged, no sensitive data
+//   TC6  Short hex "id: 1234"        - short hex (<16 hex chars) NOT masked
+//   TC7  Empty string                - returns empty string
+//   TC8  "key (hex): <32-hex>"       - parenthesised form masked
+//   TC9  "token (base64): <b64>"     - base64 form masked
+//   TC10 Bare 44-char base64         - free-floating long base64 masked
+//   TC11 "Generated salt (hex): <64-hex>" - original bug scenario fixed
+//   TC12 Size annotation in output   - <REDACTED:N-bytes> encodes correct N
 
 #include "logging/secure_logger.h"
 #include <QCoreApplication>
@@ -44,7 +44,7 @@ static QString sanitize(const char* msg)
 // Test cases
 // ---------------------------------------------------------------------------
 
-// TC1: "salt: <64 hex chars>" — value must be masked, keyword preserved.
+// TC1: "salt: <64 hex chars>" - value must be masked, keyword preserved.
 static void tc1_saltColonHex()
 {
     const char* input =
@@ -61,7 +61,7 @@ static void tc1_saltColonHex()
     check(kwPresent,  "TC1: keyword still identifiable in output");
 }
 
-// TC2: "iv=<mixed-case hex 32 chars>" — equals form, mixed case.
+// TC2: "iv=<mixed-case hex 32 chars>" - equals form, mixed case.
 static void tc2_ivEqualsHexMixedCase()
 {
     const char* input = "iv=A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5";  // 32 hex chars
@@ -73,7 +73,7 @@ static void tc2_ivEqualsHexMixedCase()
     check(hasMarker, "TC2: <REDACTED:N-bytes> marker present");
 }
 
-// TC3: "the password is hunter2" — "hunter2" is not hex; must NOT be treated
+// TC3: "the password is hunter2" - "hunter2" is not hex; must NOT be treated
 //      as a secret value.  The keyword "password" may be masked via the
 //      fallback, but "hunter2" must survive intact.
 static void tc3_nonHexValuePreserved()
@@ -99,8 +99,8 @@ static void tc4_freeFloatingLongHex()
     check(hasMarker, "TC4: <REDACTED:N-bytes> marker present");
 }
 
-// TC5: Benign message — must come through unchanged (modulo home-path masking
-//      which is unrelated to this test — we don't embed home path here).
+// TC5: Benign message - must come through unchanged (modulo home-path masking
+//      which is unrelated to this test - we don't embed home path here).
 static void tc5_benignMessage()
 {
     const char* input = "no secret here";
@@ -108,7 +108,7 @@ static void tc5_benignMessage()
     check(out == input, "TC5: benign message unchanged");
 }
 
-// TC6: Short hex-like string "id: 1234" — only 4 hex chars, below threshold.
+// TC6: Short hex-like string "id: 1234" - only 4 hex chars, below threshold.
 static void tc6_shortHexNotMasked()
 {
     const char* input = "id: 1234";
@@ -124,7 +124,7 @@ static void tc7_emptyString()
     check(out.isEmpty(), "TC7: empty input produces empty output");
 }
 
-// TC8: "key (hex): <32-hex-chars>" — parenthesised labelled form.
+// TC8: "key (hex): <32-hex-chars>" - parenthesised labelled form.
 static void tc8_keyParenHex()
 {
     const char* input = "key (hex): deadbeefcafebabe0102030405060708";  // 32 hex chars
@@ -136,7 +136,7 @@ static void tc8_keyParenHex()
     check(hasMarker, "TC8: <REDACTED:N-bytes> marker present");
 }
 
-// TC9: "token (base64): <base64>" — parenthesised base64 form.
+// TC9: "token (base64): <base64>" - parenthesised base64 form.
 static void tc9_tokenParenBase64()
 {
     // 44 chars of base64 encodes 33 bytes (with one pad char).
@@ -162,7 +162,7 @@ static void tc10_freeFloatingLongBase64()
     check(hasMarker, "TC10: <REDACTED:N-bytes> marker present");
 }
 
-// TC11: The original bug scenario — "Generated salt (hex): <64-hex>".
+// TC11: The original bug scenario - "Generated salt (hex): <64-hex>".
 //       Before the fix the hex value survived sanitization.
 static void tc11_generatedSaltHex()
 {
@@ -183,7 +183,7 @@ static void tc12_sizeAnnotation()
 {
     const char* input = "salt: 0102030405060708090a0b0c0d0e0f10";  // 32 hex chars = 16 bytes (wait: 34 chars)
     // Use exactly 32 hex chars (16 bytes).
-    const char* input16 = "salt: 0102030405060708090a0b0c0d0e0f";  // 34 chars — still valid, 17 bytes
+    const char* input16 = "salt: 0102030405060708090a0b0c0d0e0f";  // 34 chars - still valid, 17 bytes
     // Construct a clean 32-char (16 byte) value.
     const char* inputClean = "salt: 00112233445566778899aabbccddeeff";  // 32 hex = 16 bytes
     QString out = sanitize(inputClean);

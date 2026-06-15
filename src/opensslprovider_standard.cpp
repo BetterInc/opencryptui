@@ -1,4 +1,4 @@
-// Standard (non-AEAD) cipher path for OpenSSLProvider — AES-CBC, AES-CTR,
+// Standard (non-AEAD) cipher path for OpenSSLProvider - AES-CBC, AES-CTR,
 // and any mode that doesn't produce a built-in authentication tag.
 // Split out of opensslprovider.cpp so that file can stay focused on the
 // public API and the AEAD path lives next to its own tag-handling code.

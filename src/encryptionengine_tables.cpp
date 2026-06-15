@@ -1,13 +1,13 @@
 // Static algorithm / KDF lookup tables and the cipher-IV-size helper.
-// Pure functions — extracted from encryptionengine_crypto.cpp to keep the
+// Pure functions - extracted from encryptionengine_crypto.cpp to keep the
 // orchestration code there focused on the encrypt/decrypt flow. No
 // behaviour change; declarations live in include/encryptionengine.h.
 #include "encryptionengine.h"
 
 // IV size depends on the cipher mode.
-//   AES-GCM / ChaCha20-Poly1305 → 12 bytes (96-bit nonce per spec)
-//   AES-CBC / AES-CTR / Camellia → 16 bytes
-//   XChaCha20                    → 24 bytes (not currently exposed, but guarded)
+//   AES-GCM / ChaCha20-Poly1305 -> 12 bytes (96-bit nonce per spec)
+//   AES-CBC / AES-CTR / Camellia -> 16 bytes
+//   XChaCha20                    -> 24 bytes (not currently exposed, but guarded)
 /*static*/ int EncryptionEngine::ivSizeForAlgorithm(const QString& algorithm)
 {
     // Cascades are AEAD-only (v4) and use a 12-byte base nonce like GCM.
@@ -24,7 +24,7 @@
 // ---- Cipher cascades --------------------------------------------------------
 // A cascade encrypts each chunk through several AEAD ciphers in sequence, each
 // with an independent subkey, so the file is only broken if EVERY cipher is.
-// We chain the two strongest AEAD primitives we already trust — AES-256-GCM
+// We chain the two strongest AEAD primitives we already trust - AES-256-GCM
 // (a block cipher) and ChaCha20-Poly1305 (a stream cipher from a different
 // design family), so an advance against one design family doesn't sink both.
 // The cascade id is stored in the v4 inner header's reserved byte so decrypt
@@ -35,7 +35,7 @@
     case 1: return {"AES-256-GCM", "ChaCha20-Poly1305"};
     case 2: return {"ChaCha20-Poly1305", "AES-256-GCM"};
     case 3: return {"AES-256-GCM", "ChaCha20-Poly1305", "AES-256-GCM"};
-    default: return {}; // 0 / unknown → not a cascade
+    default: return {}; // 0 / unknown -> not a cascade
     }
 }
 

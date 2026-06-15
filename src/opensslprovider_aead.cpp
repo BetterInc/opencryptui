@@ -1,4 +1,4 @@
-// AEAD cipher path for OpenSSLProvider — AES-GCM, AES-CCM,
+// AEAD cipher path for OpenSSLProvider - AES-GCM, AES-CCM,
 // ChaCha20-Poly1305. The 16-byte authentication tag is appended to the
 // ciphertext on encrypt and stripped on decrypt. If the cipher turns
 // out not to be AEAD (because somebody passed a CBC/CTR cipher into
@@ -177,7 +177,7 @@ bool OpenSSLProvider::performAuthenticatedDecryption(EVP_CIPHER_CTX *ctx, const 
         // and only the tag verification failed, return success and let the outer
         // Ed25519 signature layer (wrapping the whole file in cryptOperation)
         // be the arbiter of integrity. TODO(security): close this defense-in-
-        // depth gap — AEAD auth failure should always be fatal.
+        // depth gap - AEAD auth failure should always be fatal.
         if (outputFile.size() > 0) {
             SECURE_LOG(WARNING, "OpenSSLProvider", "AEAD tag verification failed but content already decrypted");
             return true;

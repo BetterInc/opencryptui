@@ -13,18 +13,18 @@
 //
 // Therefore we implement the sanctioned fallback from the specification:
 //
-//   1.  Startup smoke  — spawn the freshly-built OpenCryptUI binary under
+//   1.  Startup smoke  - spawn the freshly-built OpenCryptUI binary under
 //       QT_QPA_PLATFORM=offscreen, give it 5 s to come up, verify the process
 //       is still alive (no crash-on-startup regression), then send SIGKILL.
 //       This catches the most common class of regression that neither the
 //       build nor the engine tests would catch.
 //
-//   2.  Round-trip via engine API  — encrypt a 1 MiB payload with AES-256-GCM
+//   2.  Round-trip via engine API  - encrypt a 1 MiB payload with AES-256-GCM
 //       using the same EncryptionEngine the binary ships, then decrypt it and
 //       byte-compare.  This exercises the full encrypt/decrypt code path that
 //       the binary uses at runtime.
 //
-//   3.  Tamper rejection via engine API  — flip a byte in the .enc file and
+//   3.  Tamper rejection via engine API  - flip a byte in the .enc file and
 //       verify (a) decryption returns false and (b) no plaintext is left on
 //       disk.  Mirrors the security guarantee the shipped binary relies on.
 //
@@ -79,7 +79,7 @@ static QByteArray readFile(const QString& path)
     return f.readAll();
 }
 
-// Generate n bytes of deterministic pseudo-random data (LCG — not
+// Generate n bytes of deterministic pseudo-random data (LCG - not
 // cryptographic, just deterministic payload for comparison).
 static QByteArray makePayload(qint64 size)
 {
@@ -108,8 +108,8 @@ static bool flipByteAt(const QString& path, qint64 offset)
 // TC0: Binary startup smoke
 //
 // Spawn OpenCryptUI, wait up to STARTUP_TIMEOUT_MS for it to either:
-//   - exit (= crash or self-terminate) → FAIL if exit code != 0 within 1 s
-//   - still be running after STARTUP_TIMEOUT_MS → PASS (it came up cleanly)
+//   - exit (= crash or self-terminate) -> FAIL if exit code != 0 within 1 s
+//   - still be running after STARTUP_TIMEOUT_MS -> PASS (it came up cleanly)
 // Then kill it and wait for it to finish.
 // ---------------------------------------------------------------------------
 
@@ -165,12 +165,12 @@ static int tc0_binaryStartupSmoke()
     const bool exitedEarly = proc.waitForFinished(1000);
     if (exitedEarly) {
         int code = proc.exitCode();
-        std::fprintf(stderr, "FAIL: TC0: binary exited within 1 s (exit code %d) — likely crash\n", code);
+        std::fprintf(stderr, "FAIL: TC0: binary exited within 1 s (exit code %d) - likely crash\n", code);
         std::fflush(stderr);
         return 1;
     }
 
-    // Process is still alive — startup succeeded.
+    // Process is still alive - startup succeeded.
     check(true, "TC0: binary alive after 1 s under offscreen platform");
 
     // Terminate gracefully; fall back to kill if needed.
@@ -185,7 +185,7 @@ static int tc0_binaryStartupSmoke()
 }
 
 // ---------------------------------------------------------------------------
-// TC1: Round-trip — 1 MiB payload, AES-256-GCM, PBKDF2
+// TC1: Round-trip - 1 MiB payload, AES-256-GCM, PBKDF2
 // ---------------------------------------------------------------------------
 
 static int tc1_roundTrip(EncryptionEngine& eng, const QString& dir)

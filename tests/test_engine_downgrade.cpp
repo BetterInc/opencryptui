@@ -22,14 +22,14 @@ static int expectRejection(EncryptionEngine& eng, const QString& ctPath,
     const bool ok = eng.decryptFile(ctPath, "password123", algo, kdf, iters,
                                     /*useHMAC=*/false, QString());
     if (ok) {
-        qCritical() << "[" << label << "] decrypt should have been REJECTED — downgrade invariant broken";
+        qCritical() << "[" << label << "] decrypt should have been REJECTED - downgrade invariant broken";
         return 1;
     }
     if (QFile::exists(plainPath)) {
         qCritical() << "[" << label << "] rejected but left plaintext on disk";
         return 2;
     }
-    qInfo() << "[" << label << "] rejected as expected — OK";
+    qInfo() << "[" << label << "] rejected as expected - OK";
     return 0;
 }
 
@@ -53,21 +53,21 @@ int main(int argc, char** argv)
     }
 
     // 1. Algorithm downgrade: claim CBC instead of GCM.
-    failures += expectRejection(eng, ct, plain, "algo downgrade GCM→CBC",
+    failures += expectRejection(eng, ct, plain, "algo downgrade GCM->CBC",
                                 "AES-256-CBC", "PBKDF2", 600000);
 
     // 2. KDF swap: same alg, claim Argon2 instead of PBKDF2.
     //    (Note: header stores numeric KDF id; should mismatch.)
-    //    Use Argon2's floor (3) — the engine refuses sub-floor iter counts
+    //    Use Argon2's floor (3) - the engine refuses sub-floor iter counts
     //    BEFORE the KDF-mismatch check now (calculateSecureIterations gates
     //    earlier). Passing floor-conformant 3 lets the KDF-mismatch path
     //    actually run, which is what this case is meant to exercise.
-    failures += expectRejection(eng, ct, plain, "KDF swap PBKDF2→Argon2",
+    failures += expectRejection(eng, ct, plain, "KDF swap PBKDF2->Argon2",
                                 "AES-256-GCM", "Argon2", 3);
 
     // 3. Iteration lie: caller claims 1; file has 600000.
     //    Previously the engine silently clamped sub-floor counts up to the
-    //    OWASP floor — so caller's "1" became 600000 internally and the
+    //    OWASP floor - so caller's "1" became 600000 internally and the
     //    decrypt succeeded, masking the fact that the v4 outer master is
     //    derived from CALLER's iter count (not the file's). That silent
     //    clamp is gone. Now the engine refuses the sub-floor count outright,
@@ -76,7 +76,7 @@ int main(int argc, char** argv)
     failures += expectRejection(eng, ct, plain, "iteration lie 1<<600000",
                                 "AES-256-GCM", "PBKDF2", 1);
 
-    // 4. Honest decrypt — make sure nothing else broke.
+    // 4. Honest decrypt - make sure nothing else broke.
     {
         QFile::remove(plain);
         const bool ok = eng.decryptFile(ct, "password123",

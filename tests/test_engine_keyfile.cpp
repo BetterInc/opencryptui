@@ -1,4 +1,4 @@
-// Engine-level keyfile test — no UI. Encrypt with password + keyfile,
+// Engine-level keyfile test - no UI. Encrypt with password + keyfile,
 // verify same keyfile round-trips, wrong keyfile rejects, no keyfile
 // rejects.
 #include "encryptionengine.h"
@@ -41,7 +41,7 @@ int main(int argc, char** argv)
 
     const QString pwd = "correct-horse-battery-staple";
 
-    // Case 1: same password + same keyfile → round-trip.
+    // Case 1: same password + same keyfile -> round-trip.
     if (!eng.encryptFile(plain, pwd, "AES-256-GCM", "PBKDF2", 600000,
                          false, QString(), QStringList{keyfileA})) {
         qCritical("encrypt with keyfile A failed");
@@ -50,7 +50,7 @@ int main(int argc, char** argv)
     QFile::remove(plain);
     if (!eng.decryptFile(ct, pwd, "AES-256-GCM", "PBKDF2", 600000,
                          false, QString(), QStringList{keyfileA})) {
-        qCritical("decrypt with keyfile A failed — round-trip broken");
+        qCritical("decrypt with keyfile A failed - round-trip broken");
         failures++;
     } else if (read(plain) != payload) {
         qCritical("decrypt succeeded but plaintext mismatch");
@@ -59,35 +59,35 @@ int main(int argc, char** argv)
         qInfo("[round-trip, keyfile A] OK");
     }
 
-    // Case 2: wrong keyfile → must fail, no output.
+    // Case 2: wrong keyfile -> must fail, no output.
     QFile::remove(plain);
     {
         const bool ok = eng.decryptFile(ct, pwd, "AES-256-GCM", "PBKDF2", 600000,
                                         false, QString(), QStringList{keyfileB});
         if (ok) {
-            qCritical("decrypt with WRONG keyfile succeeded — SECURITY BUG");
+            qCritical("decrypt with WRONG keyfile succeeded - SECURITY BUG");
             failures++;
         } else if (QFile::exists(plain)) {
             qCritical("wrong-keyfile rejected but left plaintext on disk");
             failures++;
         } else {
-            qInfo("[wrong keyfile] rejected, no output — OK");
+            qInfo("[wrong keyfile] rejected, no output - OK");
         }
     }
 
-    // Case 3: no keyfile when one was used → must fail.
+    // Case 3: no keyfile when one was used -> must fail.
     QFile::remove(plain);
     {
         const bool ok = eng.decryptFile(ct, pwd, "AES-256-GCM", "PBKDF2", 600000,
                                         false, QString(), QStringList{});
         if (ok) {
-            qCritical("decrypt WITHOUT the keyfile succeeded — SECURITY BUG");
+            qCritical("decrypt WITHOUT the keyfile succeeded - SECURITY BUG");
             failures++;
         } else if (QFile::exists(plain)) {
             qCritical("no-keyfile rejected but left plaintext on disk");
             failures++;
         } else {
-            qInfo("[missing keyfile] rejected, no output — OK");
+            qInfo("[missing keyfile] rejected, no output - OK");
         }
     }
 

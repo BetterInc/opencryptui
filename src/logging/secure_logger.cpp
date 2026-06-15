@@ -134,31 +134,31 @@ QString SecureLogger::logLevelToString(LogLevel level) {
 }
 
 // ---------------------------------------------------------------------------
-// sanitizeMessage — value-aware redaction
+// sanitizeMessage - value-aware redaction
 //
 // Design decisions:
 //
-//  • All QRegularExpression objects are static locals compiled once at first
+//  - All QRegularExpression objects are static locals compiled once at first
 //    call.  QRegularExpression is re-entrant for matching, so this is safe
 //    under the mutex that log() already holds before calling us.
 //
-//  • Three layers of detection (applied in order, most-specific first):
+//  - Three layers of detection (applied in order, most-specific first):
 //
-//    1. Labelled patterns  — "<keyword>: <hex>", "<keyword>=<hex>",
+//    1. Labelled patterns  - "<keyword>: <hex>", "<keyword>=<hex>",
 //                            "<keyword> (hex): <hex>", "<keyword> (base64): <b64>"
 //       Replace only the value token; keep the keyword in the output so the
 //       reader knows what field was present.
 //
-//    2. Free-floating long secrets — bare hex run >= 64 chars (32 bytes) or
+//    2. Free-floating long secrets - bare hex run >= 64 chars (32 bytes) or
 //       bare base64 run >= 44 chars (32+ bytes) anywhere in the message.
 //       These are overwhelmingly cryptographic material with no legitimate
 //       reason to appear verbatim in a log line.
 //
-//    3. Keyword-only fallback — matches from the original code, kept for
+//    3. Keyword-only fallback - matches from the original code, kept for
 //       backward compatibility with explicit "[REDACTED]" markers in call
 //       sites that were added before value-redaction existed.
 //
-//  • Output format: <REDACTED:N-bytes> preserves size metadata useful for
+//  - Output format: <REDACTED:N-bytes> preserves size metadata useful for
 //    "salt size mismatch" diagnostics without leaking the value.
 // ---------------------------------------------------------------------------
 
@@ -180,7 +180,7 @@ QString SecureLogger::sanitizeMessage(const QString& message) {
     sanitized.replace(QDir::homePath(), "[HOME]");
 
     // -----------------------------------------------------------------------
-    // Regex patterns — compiled once.
+    // Regex patterns - compiled once.
     // -----------------------------------------------------------------------
 
     // Keyword group (case-insensitive).
@@ -188,7 +188,7 @@ QString SecureLogger::sanitizeMessage(const QString& message) {
         QStringLiteral("password|passphrase|pwd|key|salt|iv|nonce|tag|mac|hmac|secret|token|seed");
 
     // Hex value: 16 or more hex digits (lower bound keeps short IDs like
-    // "id: 1234" untouched — those have fewer than 16 hex chars).
+    // "id: 1234" untouched - those have fewer than 16 hex chars).
     static const QString kHex = QStringLiteral("[0-9A-Fa-f]{16,}");
 
     // Base64 value: 16 or more base64 chars (covers >=12 bytes).
@@ -219,7 +219,7 @@ QString SecureLogger::sanitizeMessage(const QString& message) {
         QStringLiteral("\\b([0-9A-Fa-f]{64,})\\b"));
 
     // Pattern 2b: free-floating long base64 (>= 32 alphanum chars ~ 24 bytes).
-    // No trailing \b — base64 padding ends in '=' which is non-word, and
+    // No trailing \b - base64 padding ends in '=' which is non-word, and
     // \b can't match between a non-word char and EOS. Use a lookahead
     // for any non-word boundary OR end-of-string instead.
     // Threshold of 32 catches typical cryptographic blobs (24+ bytes) while
@@ -228,7 +228,7 @@ QString SecureLogger::sanitizeMessage(const QString& message) {
         QStringLiteral("\\b([A-Za-z0-9+/]{32,}={0,2})(?=[^A-Za-z0-9+/=]|$)"));
 
     // -----------------------------------------------------------------------
-    // Apply labelled patterns first (1a–1d): replace only the value capture.
+    // Apply labelled patterns first (1a-1d): replace only the value capture.
     // -----------------------------------------------------------------------
 
     auto replaceValue = [](QString& s, const QRegularExpression& re, bool isB64) {
@@ -253,8 +253,8 @@ QString SecureLogger::sanitizeMessage(const QString& message) {
     replaceValue(sanitized, reParenB64,  true);
 
     // -----------------------------------------------------------------------
-    // Apply free-floating long-secret patterns (2a–2b).
-    // Skip if the match position is already inside a <REDACTED:…> token to
+    // Apply free-floating long-secret patterns (2a-2b).
+    // Skip if the match position is already inside a <REDACTED:...> token to
     // avoid double-processing; a simple "does the match start after a '>'"
     // check is sufficient because we just injected those markers.
     // -----------------------------------------------------------------------
@@ -282,12 +282,12 @@ QString SecureLogger::sanitizeMessage(const QString& message) {
 
     // NOTE: the original keyword-only fallback (replace bare "secret" /
     // "key" with "[REDACTED]") was REMOVED. It was the source of the
-    // forensics-audit finding it was supposed to defend against — masking
+    // forensics-audit finding it was supposed to defend against - masking
     // the keyword leaves the value exposed, AND it false-positive-matches
     // benign sentences like "no secret here". The labelled value-aware
     // patterns plus the free-floating hex/base64 nets above are the source
     // of truth now. If a log message says "Processing key material" with
-    // no secret bytes attached, the word "key" remains visible — that's
+    // no secret bytes attached, the word "key" remains visible - that's
     // fine and arguably more useful for debugging.
     return sanitized;
 }

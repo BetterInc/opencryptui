@@ -130,7 +130,7 @@ bool BlockVolume::createImpl(EncryptionEngine& eng, const QString& path,
     return true;
 }
 
-// Public create(): new file backing — truncate + own the file.
+// Public create(): new file backing - truncate + own the file.
 bool BlockVolume::create(EncryptionEngine& eng, const QString& path,
                          const QString& password, const QString& kdf, int iterations,
                          quint32 blockSize, quint64 blockCount, QString* error,
@@ -142,7 +142,7 @@ bool BlockVolume::create(EncryptionEngine& eng, const QString& path,
 
 // Format an EXISTING device/backing of `sizeBytes` as an encrypted volume.
 // Does not truncate or delete the backing. blockCount is sized to fill it.
-// WARNING: this overwrites the entire device — the caller MUST confirm with the
+// WARNING: this overwrites the entire device - the caller MUST confirm with the
 // user and ensure the device is unmounted and not a system disk.
 bool BlockVolume::createOnDevice(EncryptionEngine& eng, const QString& devicePath,
                                  const QString& password, const QString& kdf, int iterations,
@@ -284,9 +284,9 @@ QString BlockVolume::deviceEraseBlocker(const QString& path)
             if (f.size() < 2) continue;
             const QString src = QString::fromLocal8Bit(f[0]);
             const QString mnt = QString::fromLocal8Bit(f[1]);
-            // /dev/sdb matches /dev/sdb and /dev/sdb1, /dev/sdb2, …
+            // /dev/sdb matches /dev/sdb and /dev/sdb1, /dev/sdb2, ...
             if (src == path || (src.startsWith(path) && path.startsWith("/dev/"))) {
-                return QString("%1 is mounted at %2 — unmount it first (it must not be in use).")
+                return QString("%1 is mounted at %2 - unmount it first (it must not be in use).")
                     .arg(src, mnt);
             }
         }
@@ -307,7 +307,7 @@ bool BlockVolume::formatDeviceWhole(EncryptionEngine& eng, const QString& device
     Q_UNUSED(eng); Q_UNUSED(devicePath); Q_UNUSED(password); Q_UNUSED(kdf);
     Q_UNUSED(iterations); Q_UNUSED(progress); Q_UNUSED(blockSize);
     return fail("Raw whole-device encryption is only supported on Linux right now. "
-                "Use an encrypted container file instead — it works on Windows, macOS "
+                "Use an encrypted container file instead - it works on Windows, macOS "
                 "and Linux with no admin rights.");
 #else
     const QString blocker = deviceEraseBlocker(devicePath);

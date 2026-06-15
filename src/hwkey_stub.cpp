@@ -1,4 +1,4 @@
-// hwkey_stub.cpp — Software-only, always-compiling HwKey implementation.
+// hwkey_stub.cpp - Software-only, always-compiling HwKey implementation.
 //
 // PURPOSE:
 //   This translation unit provides the fallback implementation that compiles
@@ -12,8 +12,8 @@
 // ============================================================================
 //
 //   Outer layer (AES-256-GCM, "meta-wrap"):
-//     [ nonce      12 bytes — uniformly random per wrap call ]
-//     [ ciphertext  N bytes — AES-256-GCM(K_meta, innerBlob || backendId) ]
+//     [ nonce      12 bytes - uniformly random per wrap call ]
+//     [ ciphertext  N bytes - AES-256-GCM(K_meta, innerBlob || backendId) ]
 //     [ GCM tag    16 bytes ]
 //
 //   Inner layer (ChaCha20-Poly1305, "stub wrap"):
@@ -48,7 +48,7 @@
 //     PKCS#11 CKO_SECRET_KEY ciphertext, etc.) are introduced in future, the
 //     outer AEAD envelope will uniformly conceal their structure on disk.
 //
-// NOTE: Do not remove or weaken the AEAD layers — tamper-detection tests
+// NOTE: Do not remove or weaken the AEAD layers - tamper-detection tests
 //       rely on the tag checks in both layers.
 
 #include "hwkey.h"
@@ -65,7 +65,7 @@
 #include <cstring>
 
 // ---------------------------------------------------------------------------
-// Internal namespace — not exposed outside this TU.
+// Internal namespace - not exposed outside this TU.
 // ---------------------------------------------------------------------------
 namespace {
 
@@ -92,7 +92,7 @@ constexpr int kWrapKeySize     = 32;   // 256-bit AES / ChaCha20 key (K_meta)
 constexpr unsigned char kBackendIdStub = 0x00;
 
 // ---------------------------------------------------------------------------
-// stubKeyPath() — canonical location for the per-user wrapping key file.
+// stubKeyPath() - canonical location for the per-user wrapping key file.
 // ---------------------------------------------------------------------------
 static QString stubKeyPath()
 {
@@ -101,7 +101,7 @@ static QString stubKeyPath()
 }
 
 // ---------------------------------------------------------------------------
-// loadOrCreateStubKey() — load existing K_meta or generate+persist a new one.
+// loadOrCreateStubKey() - load existing K_meta or generate+persist a new one.
 //   Returns 32-byte key on success, empty on error.
 // ---------------------------------------------------------------------------
 static QByteArray loadOrCreateStubKey(QString* errorOut)
@@ -177,7 +177,7 @@ static QByteArray loadOrCreateStubKey(QString* errorOut)
 }
 
 // ---------------------------------------------------------------------------
-// innerWrapKey() — inner ChaCha20-Poly1305 wrap.
+// innerWrapKey() - inner ChaCha20-Poly1305 wrap.
 //   Produces the inner blob that the outer AES-256-GCM layer will envelope.
 //   Not exposed outside this TU.
 // ---------------------------------------------------------------------------
@@ -250,7 +250,7 @@ static QByteArray innerWrapKey(const QByteArray& dek,
 }
 
 // ---------------------------------------------------------------------------
-// innerUnwrapKey() — inner ChaCha20-Poly1305 unwrap.
+// innerUnwrapKey() - inner ChaCha20-Poly1305 unwrap.
 //   Returns the original DEK on success, empty on failure.
 // ---------------------------------------------------------------------------
 static QByteArray innerUnwrapKey(const QByteArray& innerBlob,
@@ -324,7 +324,7 @@ static QByteArray innerUnwrapKey(const QByteArray& innerBlob,
     if (!tagOk) {
         if (errorOut)
             *errorOut = QLatin1String("HwKey::Stub: inner Poly1305 tag verification failed "
-                                      "— blob tampered or wrapping key mismatch");
+                                      "- blob tampered or wrapping key mismatch");
         dek.fill(0);
         return {};
     }
@@ -333,7 +333,7 @@ static QByteArray innerUnwrapKey(const QByteArray& innerBlob,
 }
 
 // ---------------------------------------------------------------------------
-// outerWrap() — AES-256-GCM envelope over (innerBlob || backendId).
+// outerWrap() - AES-256-GCM envelope over (innerBlob || backendId).
 //   This is the final on-disk format: 12-byte nonce + GCM ciphertext + 16-byte tag.
 //   The first byte a forensic tool sees is a uniformly random nonce byte.
 // ---------------------------------------------------------------------------
@@ -355,7 +355,7 @@ static QByteArray outerWrap(const QByteArray& innerBlob,
         return {};
     }
 
-    // Output: nonce + ciphertext + GCM tag (no outer header — the nonce IS
+    // Output: nonce + ciphertext + GCM tag (no outer header - the nonce IS
     // the first bytes of the blob, so it looks uniformly random from byte 0).
     QByteArray blob(kOuterNonceSize + ptLen + kOuterTagSize, Qt::Uninitialized);
     unsigned char* dst = reinterpret_cast<unsigned char*>(blob.data());
@@ -403,7 +403,7 @@ static QByteArray outerWrap(const QByteArray& innerBlob,
 }
 
 // ---------------------------------------------------------------------------
-// outerUnwrap() — verify GCM tag and decrypt the outer AES-256-GCM envelope.
+// outerUnwrap() - verify GCM tag and decrypt the outer AES-256-GCM envelope.
 //   On success sets backendIdOut and returns the inner blob bytes.
 // ---------------------------------------------------------------------------
 static QByteArray outerUnwrap(const QByteArray& blob,
@@ -472,7 +472,7 @@ static QByteArray outerUnwrap(const QByteArray& blob,
     if (!tagOk) {
         if (errorOut)
             *errorOut = QLatin1String("HwKey::Stub: outer AES-256-GCM tag verification failed "
-                                      "— blob tampered or wrapping key mismatch");
+                                      "- blob tampered or wrapping key mismatch");
         plaintext.fill(0);
         return {};
     }
@@ -488,14 +488,14 @@ static QByteArray outerUnwrap(const QByteArray& blob,
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
-// HwKey::Stub namespace — inner wrap/unwrap called by platform TUs and by the
+// HwKey::Stub namespace - inner wrap/unwrap called by platform TUs and by the
 // public wrapKey/unwrapKey functions when no real hardware is wired in.
 // ---------------------------------------------------------------------------
 namespace HwKey {
 namespace Stub {
 
 // ---------------------------------------------------------------------------
-// wrapKey() — two-layer wrap: ChaCha20-Poly1305 inner + AES-256-GCM outer.
+// wrapKey() - two-layer wrap: ChaCha20-Poly1305 inner + AES-256-GCM outer.
 //
 //   API CONTRACT:
 //     This function always routes wrapKey() to the software stub, regardless
@@ -532,7 +532,7 @@ QByteArray wrapKey(const QByteArray& dek, QString* errorOut)
 }
 
 // ---------------------------------------------------------------------------
-// unwrapKey() — verify outer GCM tag, then verify inner Poly1305 tag, decrypt.
+// unwrapKey() - verify outer GCM tag, then verify inner Poly1305 tag, decrypt.
 // ---------------------------------------------------------------------------
 QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut)
 {
@@ -558,7 +558,7 @@ QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut)
 } // namespace Stub
 
 // ---------------------------------------------------------------------------
-// Public API — routes through the active backend.
+// Public API - routes through the active backend.
 //
 // Platform TUs (hwkey_linux.cpp etc.) define detect() with a real probe on
 // their OS and call Stub::wrapKey/unwrapKey during the scaffolding phase.
@@ -566,11 +566,11 @@ QByteArray unwrapKey(const QByteArray& wrappedBlob, QString* errorOut)
 // when no platform TU is compiled (i.e., unsupported OS).
 //
 // wrappingBackend() is defined here (not in platform TUs) because the answer
-// is always Backend::Stub until a real hardware implementation exists — that
+// is always Backend::Stub until a real hardware implementation exists - that
 // is a global invariant, not a per-platform one.
 // ---------------------------------------------------------------------------
 
-// wrappingBackend() — what wrapKey() will ACTUALLY use right now.
+// wrappingBackend() - what wrapKey() will ACTUALLY use right now.
 //   Always returns Backend::Stub until a real hardware implementation lands.
 //   See the API HONESTY CONTRACT in hwkey.h.
 Backend wrappingBackend()
@@ -581,7 +581,7 @@ Backend wrappingBackend()
 #if !defined(Q_OS_LINUX) && !defined(Q_OS_MACOS) && !defined(Q_OS_WIN)
 Capabilities detect()
 {
-    // No platform TU — report that no hardware was found. effectiveBackend is
+    // No platform TU - report that no hardware was found. effectiveBackend is
     // always Stub (the software fallback is still functional).
     return Capabilities{
         /*backend=*/        Backend::None,

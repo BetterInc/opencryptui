@@ -70,7 +70,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
     }
 
     // Restrict output to owner-only (0600). Applies to both encrypted (.enc)
-    // outputs AND decrypted plaintext outputs — the latter is by far the more
+    // outputs AND decrypted plaintext outputs - the latter is by far the more
     // sensitive case. Best-effort; on Windows this maps to ACL bits, on Linux
     // this overrides the user's umask. Done before any write so that the
     // visible-in-/proc-fd window between create() and setPermissions() is
@@ -105,12 +105,12 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
     QByteArray iv(ivSize, 0);
 
     // -----------------------------------------------------------------------
-    // Fix #4: INVARIANT — salt, IV, and the OCUI header bytes are part of the
+    // Fix #4: INVARIANT - salt, IV, and the OCUI header bytes are part of the
     // signed region.  generateDigitalSignature seeks to offset 0 and reads the
     // entire file before the trailer is appended, so every byte written to the
     // output before appendSignature() is called is covered by the Ed25519
     // signature.  Do NOT append additional bytes after appendSignature() or
-    // move salt/IV writes to after the ciphertext — either change would silently
+    // move salt/IV writes to after the ciphertext - either change would silently
     // break integrity.  This comment is the explicit invariant documentation
     // requested in Fix #4.
     // -----------------------------------------------------------------------
@@ -132,7 +132,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
             return false;
         }
 
-        // SECURITY: do NOT log salt or IV bytes — even at DEBUG level. While
+        // SECURITY: do NOT log salt or IV bytes - even at DEBUG level. While
         // they aren't secret per se, logging them aids forensic reconstruction
         // and the SecureLogger redactor only catches keywords, not values.
         SECURE_LOG(DEBUG, "EncryptionEngine", QString("Generated salt (%1 bytes) and IV (%2 bytes)").arg(salt.size()).arg(iv.size()));
@@ -144,7 +144,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         // TEST-ONLY hook: setting OCUI_TEST_FORCE_V3=1 in the environment
         // makes the encrypt path emit v3 files instead of v4 for AEAD
         // ciphers, so the cross-version fallback path on decrypt can be
-        // exercised by automated tests. NEVER set this in production —
+        // exercised by automated tests. NEVER set this in production -
         // v3 files are NOT deniable (they have plaintext OCUI magic at
         // offset 0). Tests that use this hook should unset the variable
         // immediately after the encrypt call.
@@ -156,7 +156,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
 
         if (isAEADCipher && !forceV3) {
             // v4 path: deniable outer AEAD.
-            // No plaintext magic at offset 0 — file is: salt(32)||outer_iv(12)||ciphertext.
+            // No plaintext magic at offset 0 - file is: salt(32)||outer_iv(12)||ciphertext.
             // cryptOperationV4Encrypt receives the raw master key (pre-split) and
             // internally derives all three subkeys (outer, enc, sig) from it.
             masterKey = deriveKey(password, salt, keyfilePaths, kdf, iterations);
@@ -254,7 +254,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
         //
         // Detection strategy:
         //   1. If the algorithm is an AEAD cipher, try v4 first (deniable).
-        //      v4 files have NO magic bytes at offset 0 — we distinguish by
+        //      v4 files have NO magic bytes at offset 0 - we distinguish by
         //      attempting outer AEAD decryption; if it fails we fall through
         //      to v3/v2.
         //   2. Otherwise read the OCUI magic and route to v3 or v2.
@@ -271,7 +271,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
             if (success) {
                 SECURE_LOG(DEBUG, "EncryptionEngine", "V4 decrypt succeeded");
             } else {
-                // v4 failed — could be wrong password, or it could be a v3 file.
+                // v4 failed - could be wrong password, or it could be a v3 file.
                 // Try v3 path: reset and check for OCUI magic.
                 SECURE_LOG(DEBUG, "EncryptionEngine",
                     "V4 decrypt failed; retrying as v3");
@@ -291,7 +291,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
                     hdrIn >> magic;
                     if (magic != OCUI_MAGIC) {
                         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                            "Not a v4 file and no OCUI header — unrecognised format");
+                            "Not a v4 file and no OCUI header - unrecognised format");
                         return false;
                     }
                     hdrIn >> fileFmtVer >> fileAlgId >> fileKdfId >> reserved >> fileIterations;
@@ -350,7 +350,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
                 if (magic != OCUI_MAGIC) {
                     SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
                         "File does not have OCUI header. Old-format files must be "
-                        "re-encrypted — rejecting for security.");
+                        "re-encrypted - rejecting for security.");
                     return false;
                 }
                 hdrIn >> fileFmtVer >> fileAlgId >> fileKdfId >> reserved >> fileIterations;
@@ -378,7 +378,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
                 if (kId == KDF_ID_PBKDF2 && iterations < 600000) {
                     SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
                         QString("PBKDF2 iteration count in file (%1) is below the 600 000 "
-                                "floor — rejecting.").arg(iterations));
+                                "floor - rejecting.").arg(iterations));
                     return false;
                 }
                 SECURE_LOG(DEBUG, "EncryptionEngine",
@@ -448,7 +448,7 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
 
             if (hasSignature && !validSignature && enforceIntegrity) {
                 SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
-                    "Integrity check failed: digital signature did not verify — aborting decryption");
+                    "Integrity check failed: digital signature did not verify - aborting decryption");
                 return false;
             }
 
@@ -466,9 +466,9 @@ bool EncryptionEngine::cryptOperation(const QString &inputPath, const QString &o
 
                     if (tempFile.open()) {
                         // setPermissions only works once the file actually exists on disk
-                        // — it's a no-op when called before open(). Move it here so that
+                        // - it's a no-op when called before open(). Move it here so that
                         // the temp ciphertext copy is genuinely owner-only on Windows.
-                        // (On Linux, QTemporaryFile already uses mkstemp → 0600, so this
+                        // (On Linux, QTemporaryFile already uses mkstemp -> 0600, so this
                         // is belt-and-braces for cross-platform safety.)
                         tempFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
                         inputFile.seek(decryptionStartPos);
@@ -709,7 +709,7 @@ bool EncryptionEngine::performAuthenticatedEncryption(EVP_CIPHER_CTX *ctx, const
 
     if (isAuthenticatedMode)
     {
-        // SECURITY: do not log the AEAD tag value — it's an intermediate
+        // SECURITY: do not log the AEAD tag value - it's an intermediate
         // crypto artifact and aids forensic reconstruction.
         SECURE_LOG(DEBUG, "EncryptionEngine",
             QString("Authentication tag computed (%1 bytes)").arg(tag.size()));

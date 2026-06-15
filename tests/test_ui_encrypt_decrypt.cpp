@@ -153,7 +153,7 @@ void TestOpenCryptUI::testEncryptDecrypt()
 }
 
 // UI-driven Argon2 round-trip. Mirrors testEncryptDecrypt but selects the
-// libsodium provider — its supportedKDFs() advertises Argon2, so the
+// libsodium provider - its supportedKDFs() advertises Argon2, so the
 // dropdown actually contains it (OpenSSLProvider::supportedKDFs() does not).
 // This is the only place Argon2 gets exercised through the real UI button-
 // click flow; engine-level Argon2 is covered separately by EngineKdf.
@@ -186,7 +186,7 @@ void TestOpenCryptUI::testEncryptDecryptArgon2()
     // libsodium is the only built-in provider whose supportedKDFs() includes Argon2.
     // If it isn't compiled in, skip rather than fail.
     if (providerComboBox->findText("libsodium") < 0) {
-        QSKIP("libsodium provider not available — Argon2 UI test cannot run");
+        QSKIP("libsodium provider not available - Argon2 UI test cannot run");
     }
     setComboBoxValueAndClose(providerComboBox, "libsodium");
     QTest::qWait(WAIT_TIME_MEDIUM);

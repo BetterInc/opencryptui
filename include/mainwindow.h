@@ -56,7 +56,7 @@ public:
                             QString* error);
 
     // Shamir share files: split a password into n base64 share files (k needed
-    // to recover) at <baseFilePath>.1.share … .n.share, and recover a password
+    // to recover) at <baseFilePath>.1.share ... .n.share, and recover a password
     // from any sufficient set of share files. Factored out for testing.
     bool splitPasswordToShares(const QString& password, int n, int k,
                                const QString& baseFilePath,
@@ -89,8 +89,8 @@ private slots:
     void on_m_cryptoProviderComboBox_currentIndexChanged(const QString &providerName);
     void showProviderCapabilities();
     void updateBenchmarkTable(int iterations, double mbps, double ms, const QString &algorithm, const QString &kdf);
-    // Fired when the worker has measured every combo — promotes the
-    // "best so far" line to the final "✓ Recommended" recommendation.
+    // Fired when the worker has measured every combo - promotes the
+    // "best so far" line to the final "OK Recommended" recommendation.
     void onBenchmarkComplete();
 
     // Disk operations slots - these will be implemented in mainwindow_disk.cpp
@@ -111,11 +111,11 @@ private:
     void applyKdfIterationFloor(const QString &kdf, class QSpinBox *spinBox);
 
     // Security rating for a (cipher, KDF) pair, used by the benchmark tab.
-    // This tool ranks by SECURITY first — speed is only a tiebreaker among
+    // This tool ranks by SECURITY first - speed is only a tiebreaker among
     // equally-secure options, and for KDFs faster is actively worse (lower
     // attacker work factor). tier is 1..3 (3 = strongest), computed as the
     // weakest-link min of the cipher tier and the KDF tier. label is a
-    // human string ("Strong" / "Good" / "Weak") with a ★ rendering.
+    // human string ("Strong" / "Good" / "Weak") with a * rendering.
     struct SecurityRating { int tier; QString label; QString stars; };
     static SecurityRating securityRatingFor(const QString &cipher, const QString &kdf);
 
@@ -147,7 +147,7 @@ private:
     // Running "best" config for the benchmark recommendation banner:
     // highest security tier, then highest cipher throughput within that tier.
     // Reset when a benchmark run starts; updated as each result arrives. The
-    // banner only shows "best so far" until benchmarkFinished fires — a real
+    // banner only shows "best so far" until benchmarkFinished fires - a real
     // recommendation can't be made before every combo has been measured.
     int     m_benchRecTier = -1;
     double  m_benchRecMbps = -1.0;

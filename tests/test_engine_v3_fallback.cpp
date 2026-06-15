@@ -3,14 +3,14 @@
 // The production encrypt path defaults to v4 (deniable) for AEAD ciphers,
 // but old encrypted files in the wild are still v3 (chunked AEAD with a
 // plaintext OCUI header). The decrypt path tries v4 first and falls back
-// to v3 → v2 if outer AEAD fails. We need to assert the fallback works.
+// to v3 -> v2 if outer AEAD fails. We need to assert the fallback works.
 //
 // To produce a v3 file, we use the TEST-ONLY env var OCUI_TEST_FORCE_V3=1
 // recognised by the encrypt path. The variable is cleared before decrypt
 // so the engine takes the normal v4-first path and falls back to v3.
 //
 // This test catches the kind of regression where someone "simplifies" the
-// decrypt dispatch and accidentally drops the v3 case — silently bricking
+// decrypt dispatch and accidentally drops the v3 case - silently bricking
 // every researcher's existing encrypted archive.
 #include "encryptionengine.h"
 #include <QCoreApplication>
@@ -62,7 +62,7 @@ int main(int argc, char** argv)
     if (!dir.isValid()) { std::fprintf(stderr, "no tempdir\n"); return 99; }
 
     EncryptionEngine eng;
-    const QByteArray payload = makePayload(2 * 1024 * 1024); // 2 MiB → multiple chunks
+    const QByteArray payload = makePayload(2 * 1024 * 1024); // 2 MiB -> multiple chunks
     const QString plain = dir.filePath("p.bin");
     const QString ct    = plain + ".enc";
     const QString pwd   = "cross-version-test-pwd";
@@ -89,7 +89,7 @@ int main(int argc, char** argv)
     ok = eng.decryptFile(ct, pwd, "AES-256-GCM", "PBKDF2", 600000,
                          false, QString());
     check(ok,
-          "production decrypt (v4-first → falls back to v3) succeeds on the v3 file");
+          "production decrypt (v4-first -> falls back to v3) succeeds on the v3 file");
 
     QByteArray got = readAll(plain);
     check(got == payload, "v3 fallback round-trip is byte-identical");
@@ -126,7 +126,7 @@ int main(int argc, char** argv)
         bool notV3 = h2.size() == 4 &&
                      std::memcmp(h2.constData(), "OCUI", 4) != 0;
         check(notV3,
-              "default encrypt produces v4 (no plaintext OCUI) — env var did not leak");
+              "default encrypt produces v4 (no plaintext OCUI) - env var did not leak");
     }
 
     if (s_failures) {

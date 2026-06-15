@@ -1,5 +1,5 @@
 // Engine-level cipher-matrix test: every supported cipher must round-trip
-// (encrypt → decrypt → byte-identical plaintext). No UI.
+// (encrypt -> decrypt -> byte-identical plaintext). No UI.
 //
 // Replaces the UI-driven testAllCiphersAndKDFs for the security-relevant
 // part (the actual crypto). Only PBKDF2 is exercised here to keep runtime

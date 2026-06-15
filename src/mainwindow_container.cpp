@@ -29,7 +29,7 @@
 static void wipe(QByteArray& b) { if (!b.isEmpty()) sodium_memzero(b.data(), b.size()); }
 
 // ---------------------------------------------------------------------------
-// Core (testable) logic — no dialogs, so a UI test can call it directly.
+// Core (testable) logic - no dialogs, so a UI test can call it directly.
 // ---------------------------------------------------------------------------
 bool MainWindow::createContainerFromFiles(const QString& containerPath, qint64 sizeMiB,
                                           const QString& outerFile, const QString& outerPassword,
@@ -158,7 +158,7 @@ bool MainWindow::recoverPasswordFromShares(const QStringList& shareFiles,
 // ---------------------------------------------------------------------------
 // Helpers for the dialogs
 // ---------------------------------------------------------------------------
-// Build a "[lineedit] [Browse…]" row; returns the container widget and writes
+// Build a "[lineedit] [Browse...]" row; returns the container widget and writes
 // the QLineEdit* to *outEdit (avoids structured bindings, which can't be
 // captured in lambdas under C++17).
 static QWidget* makePathRow(QWidget* parent, MainWindow* win,
@@ -167,7 +167,7 @@ static QWidget* makePathRow(QWidget* parent, MainWindow* win,
     QWidget* w = new QWidget(parent);
     QHBoxLayout* h = new QHBoxLayout(w); h->setContentsMargins(0,0,0,0);
     QLineEdit* edit = new QLineEdit(w);
-    QPushButton* btn = new QPushButton("Browse…", w);
+    QPushButton* btn = new QPushButton("Browse...", w);
     h->addWidget(edit); h->addWidget(btn);
     QObject::connect(btn, &QPushButton::clicked, w, [win, edit, caption, save]{
         QString f = save ? QFileDialog::getSaveFileName(win, caption)
@@ -247,7 +247,7 @@ void MainWindow::on_actionCreateContainer_triggered()
         if (hiddenPw->text() == outerPw->text()) { QMessageBox::warning(this, "Error", "Outer and hidden passwords must differ."); return; }
     }
 
-    QProgressDialog prog("Creating encrypted container…", QString(), 0, 100, this);
+    QProgressDialog prog("Creating encrypted container...", QString(), 0, 100, this);
     prog.setWindowModality(Qt::WindowModal); prog.setMinimumDuration(0); prog.setValue(0);
 
     QString err;
@@ -293,7 +293,7 @@ void MainWindow::on_actionOpenContainer_triggered()
     QFormLayout* form = new QFormLayout(&dlg);
     QLineEdit* pw = new QLineEdit(&dlg); pw->setEchoMode(QLineEdit::Password);
     QWidget* pwRow = new QWidget(&dlg); QHBoxLayout* pwh = new QHBoxLayout(pwRow); pwh->setContentsMargins(0,0,0,0);
-    QPushButton* fromShares = new QPushButton("From shares…", pwRow);
+    QPushButton* fromShares = new QPushButton("From shares...", pwRow);
     pwh->addWidget(pw); pwh->addWidget(fromShares);
     form->addRow("Password:", pwRow);
     // Recover the password from k share files and fill the field.

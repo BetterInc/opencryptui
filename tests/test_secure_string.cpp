@@ -1,4 +1,4 @@
-// Tests for SecureString — round-trip, move semantics, zero-on-destroy.
+// Tests for SecureString - round-trip, move semantics, zero-on-destroy.
 #include "secure_string.h"
 #include <QCoreApplication>
 #include <QString>
@@ -29,7 +29,7 @@ int main(int argc, char** argv)
                           "c_str() returns same buffer");
     }
 
-    // 2. from_qstring — does NOT modify the source.
+    // 2. from_qstring - does NOT modify the source.
     //    This is the critical regression-guard: an earlier wipe-the-source
     //    QString attempt broke encrypt-then-decrypt with the same password.
     {
@@ -77,7 +77,7 @@ int main(int argc, char** argv)
     //    verify that release() zeroes when called via move-into-empty
     //    (which happens during destruction-equivalent paths).
     //    Use a SecureString in a smaller scope and re-allocate of the same
-    //    size — if the allocator hands the freed page back, we expect zeros.
+    //    size - if the allocator hands the freed page back, we expect zeros.
     //    This is best-effort and machine-dependent; we just smoke-test it.
     {
         std::size_t recovered_first = 0xff;
@@ -88,7 +88,7 @@ int main(int argc, char** argv)
         }
         // Allocate a same-size SecureString and read its first byte. A
         // freshly constructed SecureString(size_t) is zeroed by calloc, so
-        // we always see 0 here — but the test still proves the constructor
+        // we always see 0 here - but the test still proves the constructor
         // contract is right.
         SecureString refill(16);
         recovered_first = static_cast<unsigned char>(refill.data()[0]);

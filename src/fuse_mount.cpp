@@ -1,4 +1,4 @@
-// opencryptui-mount — FUSE driver that exposes an encrypted BlockVolume as a
+// opencryptui-mount - FUSE driver that exposes an encrypted BlockVolume as a
 // single virtual disk image, decrypting on read and encrypting on write, live.
 //
 // Usage:
@@ -8,7 +8,7 @@
 //
 // The mountpoint contains exactly one file, "disk.img", whose byte range maps
 // onto BlockVolume::readRange/writeRange. Reads decrypt on the fly; writes
-// re-encrypt the touched blocks (each with a fresh nonce — see block_volume).
+// re-encrypt the touched blocks (each with a fresh nonce - see block_volume).
 // On unmount the data is sealed; only ciphertext remains on disk.
 //
 // Cross-platform note: this is written against the libfuse3 high-level API,
@@ -188,7 +188,7 @@ int main(int argc, char** argv)
         QString err;
         int lastPct = -1;
         bool ok = BlockVolume::formatDeviceWhole(eng, dev, p1, kdf, iter, &err,
-            [&lastPct](int pct){ if (pct != lastPct) { std::fprintf(stderr, "\rFormatting… %d%%", pct); std::fflush(stderr); lastPct = pct; } });
+            [&lastPct](int pct){ if (pct != lastPct) { std::fprintf(stderr, "\rFormatting... %d%%", pct); std::fflush(stderr); lastPct = pct; } });
         std::fprintf(stderr, "\n");
         if (!ok) { std::fprintf(stderr, "Format failed: %s\n", err.toUtf8().constData()); return 1; }
         std::fprintf(stderr, "Done. %s is now an encrypted volume. Mount it with:\n"
@@ -237,7 +237,7 @@ int main(int argc, char** argv)
     }
     // Keep the mountpoint bytes alive for the whole fuse_main call.
     QByteArray mpBytes = mountPoint.toUtf8();
-    std::fprintf(stderr, "Mounted %lld-byte image at %s/%s — write a filesystem to it, "
+    std::fprintf(stderr, "Mounted %lld-byte image at %s/%s - write a filesystem to it, "
                          "then loop-mount.\n",
                  (long long)BlockVolume::capacity(g_vol),
                  mpBytes.constData(), kImageName);

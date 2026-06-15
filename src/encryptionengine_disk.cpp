@@ -12,7 +12,7 @@
 // with LTO + dead-store elimination, leaving raw key bytes in the heap
 // after the QByteArray is destroyed. sodium_memzero is documented as
 // non-elidable.  Additionally, several early-return paths previously
-// leaked the key — all such paths now wipe before returning.
+// leaked the key - all such paths now wipe before returning.
 
 bool EncryptionEngine::encryptDisk(const QString& diskPath, const QString& password, const QString& algorithm,
                                   const QString& kdf, int iterations, bool useHMAC,
