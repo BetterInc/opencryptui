@@ -113,6 +113,16 @@ public:
     static quint8      cascadeIdForAlgorithm(const QString& algorithm);
     static QStringList cascadeAlgorithmNames();
 
+    // Per-chunk AEAD primitives (public: reused by DeniableContainer and tests).
+    // buildChunkNonce: XOR the 12-byte base_iv with uint32_be(chunkIndex) low 4 bytes.
+    static QByteArray buildChunkNonce(const QByteArray& baseIv, quint32 chunkIndex);
+    // encryptChunk: encrypt plainChunk with key+nonce, append 16-byte tag.
+    static QByteArray encryptChunk(const QByteArray& key, const QByteArray& nonce,
+                                   const QByteArray& plainChunk, const QString& algorithm);
+    // decryptChunk: split last 16 bytes as tag, verify+decrypt (empty on auth failure).
+    static QByteArray decryptChunk(const QByteArray& key, const QByteArray& nonce,
+                                   const QByteArray& cipherChunkWithTag, const QString& algorithm);
+
     // Key derivation entry points.
     // QString variant: thin wrapper — converts to SecureString and delegates.
     // SecureString variant: the real implementation. Performs the keyfile
@@ -244,15 +254,7 @@ private:
     static bool isAeadAlgorithm(const QString& algorithm);
 
 
-    // v3 per-chunk AEAD helpers (encryptionengine_chunks.cpp)
-    // buildNonce: XOR the 12-byte base_iv with uint32_be(chunkIndex) in the low 4 bytes.
-    static QByteArray buildChunkNonce(const QByteArray& baseIv, quint32 chunkIndex);
-    // encryptChunk: encrypt plainChunk with key+nonce, append 16-byte GCM tag, return ciphertext+tag.
-    static QByteArray encryptChunk(const QByteArray& key, const QByteArray& nonce,
-                                   const QByteArray& plainChunk, const QString& algorithm);
-    // decryptChunk: split last 16 bytes as tag, verify+decrypt, return plaintext (empty on auth failure).
-    static QByteArray decryptChunk(const QByteArray& key, const QByteArray& nonce,
-                                   const QByteArray& cipherChunkWithTag, const QString& algorithm);
+    // (buildChunkNonce / encryptChunk / decryptChunk are declared public above.)
 
     // Cascade variants: apply ciphers[] in sequence with layerKeys[]. Encrypt
     // returns the nested ciphertext (empty on error). Decrypt unwraps in
