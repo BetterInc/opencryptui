@@ -23,6 +23,49 @@ OpenCryptUI is a Qt-based graphical user interface application for file and fold
 - GUI-based folder compression and encryption using `.tar.gz` wrapping.
 - Multi-provider backend: OpenSSL, libsodium, and Argon2 are all supported and switchable at runtime.
 
+### Advanced (VeraCrypt-parity) features
+
+- **Cipher cascades** — encrypt through multiple AEAD ciphers in sequence
+  (AES-256-GCM + ChaCha20-Poly1305, and a triple variant), each with an
+  independent subkey, so the file is only broken if *every* cipher is broken.
+  Selectable in the File/Folder algorithm dropdowns.
+- **Deniable encrypted containers with hidden volumes** — a fixed-size
+  container file that is indistinguishable from random data end-to-end (no
+  magic bytes). One password opens the outer (decoy) volume; an optional
+  second password opens a hidden volume whose very existence cannot be proven
+  without it. *File ▸ Create / Open Encrypted Container.* This supersedes the
+  old disk-header "hidden volume" flag (which announced its own existence in a
+  cleartext header and is therefore not used).
+- **Mountable encrypted volumes (on-the-fly encryption)** — `opencryptui-mount`
+  exposes an encrypted volume as a live virtual disk image (`disk.img`),
+  decrypting on read and encrypting on write; put any filesystem on it and
+  loop-mount. Built with `-DOCUI_ENABLE_FUSE=ON` (needs `libfuse3-dev`).
+  Authenticated per-block AES-256-GCM with a fresh nonce per write.
+- **Whole-USB / raw-device encryption (Linux)** —
+  `opencryptui-mount --format-device <device>` formats an entire device as an
+  encrypted volume, with a typed `ERASE` confirmation and refusal of mounted
+  devices. *Linux only* for now; Windows/macOS raw-device support is not
+  implemented (the cross-platform way to encrypt a USB is a container file on
+  it — no admin required). See [Cross-platform notes](#cross-platform-notes).
+
+### Cross-platform notes
+
+| Capability | Linux | macOS | Windows |
+|---|---|---|---|
+| File / folder / cascade / container encryption | ✅ | ✅ | ✅ |
+| Deniable containers + hidden volumes | ✅ | ✅ | ✅ |
+| Mounting a container (FUSE) | ✅ libfuse3 | needs macFUSE (same source) | needs WinFsp (same source) |
+| Whole raw-device encryption | ✅ | ❌ not implemented | ❌ not implemented |
+
+The cryptography is identical on all platforms; only the OS *device/mount
+layer* differs. The container-file model needs no admin rights and behaves
+identically everywhere.
+
+> **Note on assurance:** the cryptography here is carefully built and tested,
+> but OpenCryptUI has **not** had an independent security audit. For protecting
+> high-value data against capable adversaries, that audit gap matters more than
+> any single feature.
+
 ## Dependencies
 
 - Qt 5 or later
@@ -108,9 +151,15 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 OpenCryptUI aims to implement several additional features found in expert-level encryption tools and hardened security workflows:
 
-- **Hidden volumes:** Create hidden encrypted volumes within existing volumes for plausible deniability.
+- **Independent security audit** — the most important outstanding item; nothing below substitutes for external review.
+- **Windows/macOS raw-device encryption** — whole-device works on Linux today; the others need `DeviceIoControl`/`DKIOC` + volume locking/alignment.
+- **macOS/Windows mount packaging** — the FUSE driver source is cross-platform; ship/test it against macFUSE and WinFsp.
 - **Shamir Secret Sharing:** Optionally split the encryption key into multiple shares (e.g. 3-of-5) to improve redundancy and reduce risk.
 - **Hardware token integration:** Support for YubiKey (HMAC challenge/response or PGP smartcard mode) during key derivation.
 - **Double-layer encryption:** Encrypt file using symmetric key, then encrypt that key with user's PGP or RSA hardware key.
-- **Plausible deniability modes:** Dual-password support to unlock either dummy or real data depending on the password entered.
 - **Ephemeral unlock mode:** Temporary decryption with automatic cleanup after timeout or UI close.
+
+Implemented since the original roadmap: cipher cascades, deniable containers
+with **hidden volumes** (real plausible deniability, not the old cleartext-flag
+scaffold), on-the-fly mountable volumes (FUSE), and Linux whole-device
+encryption. See [Advanced features](#advanced-veracrypt-parity-features).

@@ -34,7 +34,7 @@ This matters for plausible deniability. Honest accounting of what's visible:
 
 | Surface | Currently visible? | Mitigation status |
 |---|---|---|
-| Plaintext "OCUI" magic at file offset 0 | **YES** | format v4 (planned) moves magic into the encrypted region |
+| Plaintext "OCUI" magic at file offset 0 | depends on format | **v4 (default for AEAD) has NO magic** — file is salt‖iv‖ciphertext, indistinguishable from random. v2 (CBC/CTR) still has the magic. Deniable containers have no magic anywhere. |
 | File length pattern (chunked AEAD has predictable per-chunk overhead) | YES | inherent — accept it |
 | Existence of OpenCryptUI binary on disk reveals tool choice | YES | future `OCUI_STEALTH=ON` build option strips identifying strings |
 | TPM use (any Backend other than `None`) | leak via TPM2_BLOB structure | **see Hardware Backends below — TPM is NOT recommended for this threat model** |
@@ -55,6 +55,52 @@ This matters for plausible deniability. Honest accounting of what's visible:
 
 **Cipher selection**: Camellia-256-CBC and Camellia-128-CBC have been removed.
 They are not on the CNSA 2.0 approved list and provide no authenticated encryption.
+
+---
+
+## Advanced features — security properties
+
+### Cipher cascades
+Each chunk is encrypted through an ordered list of AEAD ciphers (e.g.
+AES-256-GCM then ChaCha20-Poly1305), each with an **independent** subkey
+derived via `crypto_kdf_derive_from_key`. The same per-chunk nonce is reused
+across layers, which is safe because each layer has a distinct key (GCM/Poly1305
+nonce-uniqueness is required only per key). Breaking the file requires breaking
+*every* cipher in the chain. Cascades use the deniable v4 path, so output stays
+magic-free. The recipe id is bound into the authenticated inner header (no
+recipe-confusion/downgrade).
+
+### Deniable containers & hidden volumes
+A fixed-size container whose every byte is random/ciphertext — no magic. Two
+64 KiB header slots (outer @0, hidden @64 KiB) are *always* present; an absent
+hidden header is just the random fill, indistinguishable from an encrypted one.
+A password opens whichever slot its key + embedded magic validate: the outer
+password yields the decoy, the hidden password the real volume, with **no
+external tell of whether a hidden volume exists**. Verified by a test asserting
+an outer-only and an outer+hidden container of the same size are statistically
+indistinguishable (entropy of the hidden-header slot and tail within 0.05).
+This replaces the old disk-header "hidden volume" approach, which wrote
+`hasHiddenVolume: true` in a cleartext JSON header (false deniability) and is
+not used.
+
+### Mountable volumes / on-the-fly encryption
+`BlockVolume` is an authenticated random-access block device. Because a mounted
+volume rewrites blocks in place, a deterministic per-index nonce would be
+reused across writes — catastrophic for AES-GCM — so **every block write picks
+a fresh random 96-bit nonce stored alongside the block**. Each (key, nonce)
+pair is used once. The FUSE driver only ever exposes decrypted bytes through
+the mount; the backing file/device holds ciphertext only (verified end-to-end).
+
+### Whole-device (USB) encryption
+Linux only. Uses the "format as a fresh encrypted volume" model (not in-place
+preserve-data reencryption). Refuses a mounted device, requires a typed
+`ERASE <device>` confirmation, and sizes the device via `BLKGETSIZE64`.
+Windows/macOS return a clear "not supported yet" error rather than risk an
+unsafe partial write; the cross-platform path is a container file.
+
+> **Assurance:** all of the above is tested (round-trip, tamper rejection,
+> forensic indistinguishability, real FUSE mount e2e) but **not independently
+> audited**. Treat the audit gap as the dominant risk.
 
 ---
 
