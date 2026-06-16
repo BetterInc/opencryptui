@@ -64,7 +64,7 @@ void MainWindow::buildEasyHome()
     title->setFont(tf);
     root->addWidget(title);
 
-    // Segmented choice: File / Folder / Vault / Disk.
+    // Segmented choice: File / Vault / Disk.
     QHBoxLayout* seg = new QHBoxLayout();
     QButtonGroup* group = new QButtonGroup(m_easyHome);
     group->setExclusive(true);
@@ -209,9 +209,9 @@ void MainWindow::buildEasyHome()
         QLabel* vd = new QLabel(
             "A vault is a single encrypted container file you can keep anywhere, "
             "including on a USB stick. It can hold a hidden second volume for "
-            "deniability, and its password can be split into key shares. Unlike "
-            "encrypting a folder (which makes one .enc you must fully decrypt), a "
-            "vault is fixed-size and can be mounted as a drive.", vaultTab);
+            "deniability, and its password can be split into key shares. Unlike a "
+            "plain encrypted file, a vault is fixed-size and can be mounted as a "
+            "drive.", vaultTab);
         vd->setWordWrap(true);
         vd->setStyleSheet("color:#888;");
         QPushButton* createV = new QPushButton("Create Vault...", vaultTab);
