@@ -33,15 +33,9 @@ void TestOpenCryptUI::testTabSwitching()
     QVERIFY(fileEncryptButton);
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Successfully switched to File tab");
 
-    // 2. Folder Tab
-    switchToTab("Folder");
-    QLineEdit *folderPathInput = mainWindow->findChild<QLineEdit *>("folderPathLineEdit");
-    QLineEdit *folderPasswordInput = mainWindow->findChild<QLineEdit *>("folderPasswordLineEdit");
-    QPushButton *folderEncryptButton = mainWindow->findChild<QPushButton *>("folderEncryptButton");
-    QVERIFY(folderPathInput);
-    QVERIFY(folderPasswordInput);
-    QVERIFY(folderEncryptButton);
-    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Successfully switched to Folder tab");
+    // 2. Vault Tab (replaced the removed Folder tab)
+    switchToTab("Vault");
+    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Successfully switched to Vault tab");
 
     // 3. Disk Tab
     switchToTab("Disk");
@@ -125,7 +119,7 @@ void TestOpenCryptUI::testCryptoProviderSwitching()
     QVERIFY(!providers.isEmpty());
 
     // Test each provider with different tabs
-    QStringList tabsToTest = {"File", "Folder", "Disk"};
+    QStringList tabsToTest = {"File", "Disk"};
 
     for (const QString &provider : providers)
     {

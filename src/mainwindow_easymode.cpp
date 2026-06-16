@@ -41,7 +41,7 @@ void MainWindow::buildEasyHome()
     QHBoxLayout* seg = new QHBoxLayout();
     QButtonGroup* group = new QButtonGroup(m_easyHome);
     group->setExclusive(true);
-    const QStringList kinds = {"File", "Folder", "Vault", "Disk"};
+    const QStringList kinds = {"File", "Vault", "Disk"};
     for (const QString& kind : kinds) {
         QPushButton* b = new QPushButton(kind, m_easyHome);
         b->setCheckable(true);
@@ -146,9 +146,7 @@ void MainWindow::buildEasyHome()
     QPushButton* helpBtn = new QPushButton("Help", header);
     helpBtn->setObjectName("helpButton");
     QMenu* helpMenu = new QMenu(helpBtn);
-    helpMenu->addAction("Create Vault...", this, &MainWindow::on_actionCreateContainer_triggered);
-    helpMenu->addAction("Open Vault...",   this, &MainWindow::on_actionOpenContainer_triggered);
-    helpMenu->addSeparator();
+    // (Vault create/open live in the Vault tab now, not here.)
     helpMenu->addAction("Security Guide",  this, &MainWindow::on_actionSecurityGuide_triggered);
     helpMenu->addAction("About",           this, &MainWindow::on_actionAbout_triggered);
     helpBtn->setMenu(helpMenu);
@@ -156,6 +154,19 @@ void MainWindow::buildEasyHome()
     hb->addWidget(helpBtn);
 
     ui->verticalLayout->insertWidget(0, header); // very top, above Easy home + tabs
+
+    // ---- Remove features we no longer expose --------------------------------
+    // Folder encryption (superseded by Vaults) and the crypto-provider row
+    // (advanced, rarely needed). Engine paths remain for tests/compatibility.
+    if (ui->folderTab) {
+        const int fi = ui->tabWidget->indexOf(ui->folderTab);
+        if (fi >= 0) ui->tabWidget->removeTab(fi);
+    }
+    if (ui->providerLayout) {
+        for (int i = 0; i < ui->providerLayout->count(); ++i)
+            if (QWidget* w = ui->providerLayout->itemAt(i)->widget())
+                w->setVisible(false);
+    }
 
     // ---- Vault tab in Advanced mode (first-class, not just a menu item) -----
     {
@@ -210,13 +221,7 @@ void MainWindow::applyUiMode(bool advanced)
     // just clutters the Easy home. Show it only in Advanced mode.
     if (statusBar()) statusBar()->setVisible(advanced);
 
-    // Hide the crypto-provider row in Easy mode (advanced concept).
-    if (ui->providerLayout) {
-        for (int i = 0; i < ui->providerLayout->count(); ++i) {
-            if (QWidget* w = ui->providerLayout->itemAt(i)->widget())
-                w->setVisible(advanced);
-        }
-    }
+    // (The crypto-provider row is removed entirely in buildEasyHome.)
 
     // Easy-home widgets that only apply to File/Folder.
     const bool inlineFields = !advanced && (m_easyKind == "File" || m_easyKind == "Folder");
