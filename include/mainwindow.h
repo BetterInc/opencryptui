@@ -70,12 +70,8 @@ private slots:
     void showEstimatedTime(const QString &timeStr);
     void on_fileEncryptButton_clicked();
     void on_fileDecryptButton_clicked();
-    void on_folderEncryptButton_clicked();
-    void on_folderDecryptButton_clicked();
     void on_fileBrowseButton_clicked();
-    void on_folderBrowseButton_clicked();
     void on_fileKeyfileBrowseButton_clicked();
-    void on_folderKeyfileBrowseButton_clicked();
     void on_benchmarkButton_clicked();
     void on_actionExit_triggered();
     void on_actionPreferences_triggered();
@@ -159,12 +155,7 @@ private:
     static QTextStream *s_logStream;
     
     QLabel *fileSecurityStatusLabel;
-    QLabel *folderSecurityStatusLabel;
     QLabel *diskSecurityStatusLabel;
-    
-    QLabel *filePasswordStrengthLabel;
-    QLabel *folderPasswordStrengthLabel;
-    QLabel *diskPasswordStrengthLabel;
 
     // Running "best" config for the benchmark recommendation banner:
     // highest security tier, then highest cipher throughput within that tier.
@@ -182,11 +173,9 @@ private:
 
     void setupUI();
     void setupComboBoxes();
-    void setupSecurePasswordFields();
     void connectSignalsAndSlots();
-    void startWorker(bool encrypt, bool isFile);
+    void startWorker(bool encrypt);
     void updateSecurityStatus(const QString &path, QLabel *statusLabel);
-    void checkPasswordStrength(const QString &password);
     void checkHardwareAcceleration();
     void applyTheme(const QString &theme);
     void loadPreferences();
@@ -197,15 +186,6 @@ private:
     bool hasAdminPrivileges();
     bool elevatePrivileges(const QString &diskPath);
     bool containsKeyfile(QListWidget *listWidget, const QString &path);
-    
-    // Entropy-related methods
-    void setupEntropyMonitoring();
-    void createEntropyMonitoringUI(QWidget *tabWidget, const QString &prefix);
-    void updateEntropyHealth();
-    void runEntropyTest();
-    void updateEntropyDisplays();
-    void updateTabEntropyDisplay(const QString &prefix, const QString &source, int entropyPerc, 
-                                bool isCritical, int refreshRate, const QDateTime &lastUpdate);
 };
 
 #endif // MAINWINDOW_H 

@@ -51,8 +51,6 @@ public:
     // creates its own QString copy.
     bool encryptFile(const QString& filePath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
     bool decryptFile(const QString& filePath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
-    bool encryptFolder(const QString& folderPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
-    bool decryptFolder(const QString& folderPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
 
     // SecureString password overloads - the real implementations. The
     // mlocked + zero-on-destroy SecureString flows through cryptOperation
@@ -61,9 +59,7 @@ public:
     // sensitive.
     bool encryptFile(const QString& filePath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
     bool decryptFile(const QString& filePath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
-    bool encryptFolder(const QString& folderPath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
-    bool decryptFolder(const QString& folderPath, const class SecureString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QString& customHeader, const QStringList& keyfilePaths = QStringList());
-    
+
     // Secure deletion methods
     bool secureDeleteFile(const QString& filePath, int passes = 3);
     bool secureDeletePlaintext(const QString& plaintextFilePath);
@@ -94,9 +90,6 @@ public:
     // Hidden volume support - encrypt/decrypt specific section of disk
     bool encryptDiskSection(const QString& diskPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QStringList& keyfilePaths, qint64 startOffset, qint64 sectionSize);
     bool decryptDiskSection(const QString& diskPath, const QString& password, const QString& algorithm, const QString& kdf, int iterations, bool useHMAC, const QStringList& keyfilePaths, qint64 startOffset, qint64 sectionSize);
-
-    bool compressFolder(const QString& folderPath, const QString& outputFilePath);
-    bool decompressFolder(const QString& filePath, const QString& outputFolderPath);
 
     // Removed getLastIv method for security reasons
 

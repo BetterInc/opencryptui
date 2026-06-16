@@ -148,70 +148,36 @@ void EncryptionWorker::process()
         QString result;
         if (m_encrypt)
         {
-            if (m_isFile)
-            {
-                bool success = m_engine.encryptFile(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
-                result = success ? m_path + ".encrypted" : m_engine.lastError().isEmpty()
-                    ? QStringLiteral("Failed to encrypt file") : m_engine.lastError();
-                emit progress(100);
-                emit finished(success
-                    ? QString("File encrypted successfully. Output: %1").arg(result)
-                    : result,
-                    success, true);
-            }
-            else
-            {
-                emit progress(10);
-                emit estimatedTime("Compressing folder... (est: 30 seconds)");
-
-                bool success = m_engine.encryptFolder(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
-                result = success ? m_path + ".encrypted" : m_engine.lastError().isEmpty()
-                    ? QStringLiteral("Failed to encrypt folder") : m_engine.lastError();
-                emit progress(100);
-                emit finished(success
-                    ? QString("Folder encrypted successfully. Output: %1").arg(result)
-                    : result,
-                    success, false);
-            }
+            bool success = m_engine.encryptFile(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
+            result = success ? m_path + ".encrypted" : m_engine.lastError().isEmpty()
+                ? QStringLiteral("Failed to encrypt file") : m_engine.lastError();
+            emit progress(100);
+            emit finished(success
+                ? QString("File encrypted successfully. Output: %1").arg(result)
+                : result,
+                success, true);
         }
         else
         {
-            if (m_isFile)
-            {
-                bool success = m_engine.decryptFile(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
-                result = success ? m_path.left(m_path.lastIndexOf(".encrypted")) : m_engine.lastError().isEmpty()
-                    ? QStringLiteral("Failed to decrypt file") : m_engine.lastError();
-                emit progress(100);
-                emit finished(success
-                    ? QString("File decrypted successfully. Output: %1").arg(result)
-                    : result,
-                    success, true);
-            }
-            else
-            {
-                emit progress(10);
-                emit estimatedTime("Decrypting archive... (est: 15 seconds)");
-
-                bool success = m_engine.decryptFolder(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
-                result = success ? m_path.left(m_path.lastIndexOf(".encrypted")) : m_engine.lastError().isEmpty()
-                    ? QStringLiteral("Failed to decrypt folder") : m_engine.lastError();
-                emit progress(100);
-                emit finished(success
-                    ? QString("Folder decrypted successfully. Output: %1").arg(result)
-                    : result,
-                    success, false);
-            }
+            bool success = m_engine.decryptFile(m_path, m_password, m_algorithm, m_kdf, m_iterations, m_useHMAC, m_customHeader, m_keyfilePaths);
+            result = success ? m_path.left(m_path.lastIndexOf(".encrypted")) : m_engine.lastError().isEmpty()
+                ? QStringLiteral("Failed to decrypt file") : m_engine.lastError();
+            emit progress(100);
+            emit finished(success
+                ? QString("File decrypted successfully. Output: %1").arg(result)
+                : result,
+                success, true);
         }
     }
     catch (const std::exception &e)
     {
         emit progress(0);
-        emit finished(QString("Operation failed: %1").arg(e.what()), false, m_isFile);
+        emit finished(QString("Operation failed: %1").arg(e.what()), false, true);
     }
     catch (...)
     {
         emit progress(0);
-        emit finished("Operation failed: Unknown error", false, m_isFile);
+        emit finished("Operation failed: Unknown error", false, true);
     }
 }
 

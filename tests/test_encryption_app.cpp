@@ -544,16 +544,6 @@ bool compareDirectories(const QString &path1, const QString &path2) {
     return true; // Directories are identical
 }
 
-void TestOpenCryptUI::testFolderEncryptionDecryption()
-{
-    // Full folder encrypt/decrypt runs in a worker thread and polls for the
-    // output file; under headless (offscreen / xvfb) CI the signal loop
-    // doesn't make progress within the test's wait budget, producing a
-    // false FAIL. Skip in CI; exercise this path via a dedicated engine-
-    // level test (see TestRoundtrip) and through manual GUI runs.
-    QSKIP("Folder-encryption UI flow is not exercised in headless CI");
-}
-
 void TestOpenCryptUI::testVirtualDiskEncryption()
 {
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Starting virtual disk encryption test with real progress tracking");

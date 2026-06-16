@@ -56,7 +56,6 @@ private slots:
     void testVirtualDiskEncryption();
     void testHiddenVolumeEncryption();
     void testSecureDiskWiping();
-    void testFolderEncryptionDecryption();
     void testTabSwitching();
     void testCryptoProviderSwitching();
     void testTamperDetection();

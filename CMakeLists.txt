@@ -174,7 +174,6 @@ set(LIBRARY_SOURCES
     src/mainwindow_easymode.cpp
     include/mainwindow.h
     src/mainwindow_disk.cpp
-    src/mainwindow_entropy.cpp
     src/encryptionengine_init.cpp
     src/encryptionengine_fileops.cpp
     src/encryptionengine_keyderivation.cpp

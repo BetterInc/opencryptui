@@ -228,8 +228,7 @@ int main(int argc, char **argv)
         savePng(&w, "mainwindow_800x600_disk");
         // Also small-shot the file tab - the file tab is the most cramped.
         for (int i = 0; i < top->count(); ++i) {
-            if (top->tabText(i).contains("File", Qt::CaseInsensitive)
-                && !top->tabText(i).contains("Folder", Qt::CaseInsensitive))
+            if (top->tabText(i).contains("File", Qt::CaseInsensitive))
             {
                 top->setCurrentIndex(i);
                 break;

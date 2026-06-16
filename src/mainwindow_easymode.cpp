@@ -180,13 +180,9 @@ void MainWindow::buildEasyHome()
 
     ui->verticalLayout->insertWidget(0, header); // very top, above Easy home + tabs
 
-    // ---- Remove features we no longer expose --------------------------------
-    // Folder encryption (superseded by Vaults) and the crypto-provider row
-    // (advanced, rarely needed). Engine paths remain for tests/compatibility.
-    if (ui->folderTab) {
-        const int fi = ui->tabWidget->indexOf(ui->folderTab);
-        if (fi >= 0) ui->tabWidget->removeTab(fi);
-    }
+    // ---- Hide the crypto-provider row (advanced, rarely needed) -------------
+    // Folder encryption was removed entirely; Vaults supersede it. The
+    // provider combobox stays in the widget tree (tests drive it) but is hidden.
     if (ui->providerLayout) {
         for (int i = 0; i < ui->providerLayout->count(); ++i)
             if (QWidget* w = ui->providerLayout->itemAt(i)->widget())

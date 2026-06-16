@@ -45,7 +45,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Set default values for iterations
     ui->iterationsSpinBox->setValue(10);
-    ui->folderIterationsSpinBox->setValue(10);
 
     // Ensure connectSignalsAndSlots is called only once
     static bool connectionsSet = false;
@@ -172,25 +171,20 @@ void MainWindow::setupUI()
     setupComboBoxes();
     ui->fileProgressBar->setVisible(false);
     ui->fileEstimatedTimeLabel->setVisible(false);
-    ui->folderProgressBar->setVisible(false);
-    ui->folderEstimatedTimeLabel->setVisible(false);
     ui->diskProgressBar->setVisible(false);
     ui->diskEstimatedTimeLabel->setVisible(false);
-    
+
     // Create and set up security status labels
     fileSecurityStatusLabel = new QLabel(this);
-    folderSecurityStatusLabel = new QLabel(this);
     diskSecurityStatusLabel = new QLabel(this);
-    
+
     // Style the labels
     QString baseStyle = "font-weight: bold; padding: 5px; border-radius: 3px;";
     fileSecurityStatusLabel->setStyleSheet(baseStyle);
-    folderSecurityStatusLabel->setStyleSheet(baseStyle);
     diskSecurityStatusLabel->setStyleSheet(baseStyle);
-    
+
     // Add labels to layout near path fields
     ui->fileSelectionLayout->addWidget(fileSecurityStatusLabel);
-    ui->folderSelectionLayout->addWidget(folderSecurityStatusLabel);
     ui->diskSelectionLayout->addWidget(diskSecurityStatusLabel);
 
     // Add crypto provider items
@@ -213,12 +207,9 @@ void MainWindow::setupUI()
 
     // Install event filter on all relevant widgets
     ui->filePasswordLineEdit->installEventFilter(this);
-    ui->folderPasswordLineEdit->installEventFilter(this);
     ui->diskPasswordLineEdit->installEventFilter(this);
     ui->fileEncryptButton->installEventFilter(this);
     ui->fileDecryptButton->installEventFilter(this);
-    ui->folderEncryptButton->installEventFilter(this);
-    ui->folderDecryptButton->installEventFilter(this);
     ui->diskEncryptButton->installEventFilter(this);
     ui->diskDecryptButton->installEventFilter(this);
     
@@ -252,23 +243,19 @@ void MainWindow::setupComboBoxes()
                               "AES-128-GCM", "AES-128-CTR", "AES-192-GCM", "AES-192-CTR",
                               "AES-128-CBC", "AES-192-CBC", "Camellia-256-CBC", "Camellia-128-CBC"};
     // Append cipher cascades (multi-layer AEAD chains) after the single ciphers.
-    // These route through the deniable v4 path; offered on file/folder tabs.
+    // These route through the deniable v4 path; offered on the file tab.
     const QStringList cascades = EncryptionEngine::cascadeAlgorithmNames();
     ui->fileAlgorithmComboBox->addItems(algorithms);
     ui->fileAlgorithmComboBox->addItems(cascades);
-    ui->folderAlgorithmComboBox->addItems(algorithms);
-    ui->folderAlgorithmComboBox->addItems(cascades);
     ui->diskAlgorithmComboBox->addItems(algorithms);
 
     QStringList kdfs = {"Argon2", "Scrypt", "PBKDF2"};
 
     ui->kdfComboBox->addItems(kdfs);
-    ui->folderKdfComboBox->addItems(kdfs);
     ui->diskKdfComboBox->addItems(kdfs);
 
     // Default to Argon2 (memory-hard, recommended)
     ui->kdfComboBox->setCurrentText("Argon2");
-    ui->folderKdfComboBox->setCurrentText("Argon2");
     ui->diskKdfComboBox->setCurrentText("Argon2");
 
     // Wire each KDF combo to its iteration spinbox so the spinbox minimum
@@ -280,19 +267,15 @@ void MainWindow::setupComboBoxes()
     // if it falls below the new minimum (visible jump - honest).
     connect(ui->kdfComboBox, &QComboBox::currentTextChanged, this,
             [this](const QString &k) { applyKdfIterationFloor(k, ui->iterationsSpinBox); });
-    connect(ui->folderKdfComboBox, &QComboBox::currentTextChanged, this,
-            [this](const QString &k) { applyKdfIterationFloor(k, ui->folderIterationsSpinBox); });
     connect(ui->diskKdfComboBox, &QComboBox::currentTextChanged, this,
             [this](const QString &k) { applyKdfIterationFloor(k, ui->diskIterationsSpinBox); });
 
     // Apply the floor immediately for the Argon2 default just selected above
     // (currentTextChanged may not have fired if Argon2 was already the index).
     applyKdfIterationFloor("Argon2", ui->iterationsSpinBox);
-    applyKdfIterationFloor("Argon2", ui->folderIterationsSpinBox);
     applyKdfIterationFloor("Argon2", ui->diskIterationsSpinBox);
 
     ui->hmacCheckBox->setChecked(true);
-    ui->folderHmacCheckBox->setChecked(true);
     ui->diskHmacCheckBox->setChecked(true);
 }
 
@@ -396,10 +379,6 @@ void MainWindow::connectSignalsAndSlots()
     safeConnect(ui->fileEncryptButton, SIGNAL(clicked()), this, SLOT(on_fileEncryptButton_clicked()));
     safeConnect(ui->fileDecryptButton, SIGNAL(clicked()), this, SLOT(on_fileDecryptButton_clicked()));
 
-    // Folder encryption/decryption
-    safeConnect(ui->folderEncryptButton, SIGNAL(clicked()), this, SLOT(on_folderEncryptButton_clicked()));
-    safeConnect(ui->folderDecryptButton, SIGNAL(clicked()), this, SLOT(on_folderDecryptButton_clicked()));
-
     // Disk encryption/decryption
     safeConnect(ui->diskEncryptButton, SIGNAL(clicked()), this, SLOT(on_diskEncryptButton_clicked()));
     safeConnect(ui->diskDecryptButton, SIGNAL(clicked()), this, SLOT(on_diskDecryptButton_clicked()));
@@ -410,8 +389,6 @@ void MainWindow::connectSignalsAndSlots()
     // Other button connections
     safeConnect(ui->fileBrowseButton, SIGNAL(clicked()), this, SLOT(on_fileBrowseButton_clicked()));
     safeConnect(ui->fileKeyfileBrowseButton, SIGNAL(clicked()), this, SLOT(on_fileKeyfileBrowseButton_clicked()));
-    safeConnect(ui->folderBrowseButton, SIGNAL(clicked()), this, SLOT(on_folderBrowseButton_clicked()));
-    safeConnect(ui->folderKeyfileBrowseButton, SIGNAL(clicked()), this, SLOT(on_folderKeyfileBrowseButton_clicked()));
     safeConnect(ui->benchmarkButton, SIGNAL(clicked()), this, SLOT(on_benchmarkButton_clicked()));
 
     // Menu actions
@@ -427,9 +404,6 @@ void MainWindow::connectSignalsAndSlots()
     connect(ui->filePathLineEdit, &QLineEdit::textChanged, [this](const QString &text) {
         updateSecurityStatus(text, fileSecurityStatusLabel);
     });
-    connect(ui->folderPathLineEdit, &QLineEdit::textChanged, [this](const QString &text) {
-        updateSecurityStatus(text, folderSecurityStatusLabel);
-    });
     connect(ui->diskPathLineEdit, &QLineEdit::textChanged, [this](const QString &text) {
         updateSecurityStatus(text, diskSecurityStatusLabel);
     });
@@ -441,8 +415,8 @@ void MainWindow::connectSignalsAndSlots()
 }
 
 // ------------------------------------------------------------------
-// File/folder encrypt/decrypt buttons, worker dispatch, and browse
-// dialogs moved to src/mainwindow_fileops.cpp.
+// File encrypt/decrypt buttons, worker dispatch, and browse dialogs
+// moved to src/mainwindow_fileops.cpp.
 // ------------------------------------------------------------------
 
 
@@ -645,18 +619,6 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
                 ui->fileDecryptButton->click();
                 return true;
             }
-            else if (obj == ui->folderPasswordLineEdit || obj == ui->folderEncryptButton)
-            {
-                SECURE_LOG(DEBUG, "MainWindow", "Enter pressed for folder encryption");
-                ui->folderEncryptButton->click();
-                return true;
-            }
-            else if (obj == ui->folderDecryptButton)
-            {
-                SECURE_LOG(DEBUG, "MainWindow", "Enter pressed for folder decryption");
-                ui->folderDecryptButton->click();
-                return true;
-            }
         }
     }
     return QObject::eventFilter(obj, event);
@@ -669,131 +631,6 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 // ------------------------------------------------------------------
 
 
-void MainWindow::setupSecurePasswordFields()
-{
-    // Configure password fields for security
-    ui->filePasswordLineEdit->setEchoMode(QLineEdit::Password);
-    ui->folderPasswordLineEdit->setEchoMode(QLineEdit::Password);
-    ui->diskPasswordLineEdit->setEchoMode(QLineEdit::Password);
-    ui->diskConfirmPasswordLineEdit->setEchoMode(QLineEdit::Password);
-    
-    // Create password strength indicator labels
-    QLabel* fileStrengthLabel = new QLabel(this);
-    QLabel* folderStrengthLabel = new QLabel(this);
-    QLabel* diskStrengthLabel = new QLabel(this);
-    
-    // Add labels to layouts
-    ui->filePasswordLayout->addWidget(fileStrengthLabel);
-    ui->folderPasswordLayout->addWidget(folderStrengthLabel);
-    ui->standardVolumeLayout->addWidget(diskStrengthLabel);
-    
-    // Store references as member variables for later use
-    filePasswordStrengthLabel = fileStrengthLabel;
-    folderPasswordStrengthLabel = folderStrengthLabel;
-    diskPasswordStrengthLabel = diskStrengthLabel;
-    
-    // Enable password strength indicators
-    connect(ui->filePasswordLineEdit, &QLineEdit::textChanged, this, &MainWindow::checkPasswordStrength);
-    connect(ui->folderPasswordLineEdit, &QLineEdit::textChanged, this, &MainWindow::checkPasswordStrength);
-    connect(ui->diskPasswordLineEdit, &QLineEdit::textChanged, this, &MainWindow::checkPasswordStrength);
-    
-    // Set placeholder text with password recommendations
-    QString pwdHint = "Enter strong password (min. 12 chars, mix of letters/numbers/symbols)";
-    ui->filePasswordLineEdit->setPlaceholderText(pwdHint);
-    ui->folderPasswordLineEdit->setPlaceholderText(pwdHint);
-    ui->diskPasswordLineEdit->setPlaceholderText(pwdHint);
-    ui->diskConfirmPasswordLineEdit->setPlaceholderText("Re-enter password to confirm");
-    
-    // Disable auto-completion for password fields
-    ui->filePasswordLineEdit->setAttribute(Qt::WA_InputMethodEnabled, false);
-    ui->folderPasswordLineEdit->setAttribute(Qt::WA_InputMethodEnabled, false);
-    ui->diskPasswordLineEdit->setAttribute(Qt::WA_InputMethodEnabled, false);
-    ui->diskConfirmPasswordLineEdit->setAttribute(Qt::WA_InputMethodEnabled, false);
-    
-    // Add "Show Password" checkboxes
-    QCheckBox* showFilePassword = new QCheckBox("Show Password", this);
-    ui->filePasswordLayout->addWidget(showFilePassword);
-    connect(showFilePassword, &QCheckBox::toggled, [this](bool checked) {
-        ui->filePasswordLineEdit->setEchoMode(checked ? QLineEdit::Normal : QLineEdit::Password);
-    });
-    
-    QCheckBox* showFolderPassword = new QCheckBox("Show Password", this);
-    ui->folderPasswordLayout->addWidget(showFolderPassword);
-    connect(showFolderPassword, &QCheckBox::toggled, [this](bool checked) {
-        ui->folderPasswordLineEdit->setEchoMode(checked ? QLineEdit::Normal : QLineEdit::Password);
-    });
-}
-
-void MainWindow::checkPasswordStrength(const QString &password)
-{
-    // Get the sender object to determine which password field was updated
-    QObject* sender = QObject::sender();
-    if (!sender) return;
-    
-    QLabel* strengthLabel = nullptr;
-    
-    if (sender == ui->filePasswordLineEdit) {
-        strengthLabel = filePasswordStrengthLabel;
-    } else if (sender == ui->folderPasswordLineEdit) {
-        strengthLabel = folderPasswordStrengthLabel;
-    } else if (sender == ui->diskPasswordLineEdit) {
-        strengthLabel = diskPasswordStrengthLabel;
-    }
-    
-    if (!strengthLabel) return;
-    
-    // Calculate password strength
-    int score = 0;
-    
-    // Length check (up to 5 points)
-    score += qMin(5, password.length() / 2);
-    
-    // Complexity checks
-    bool hasUppercase = false;
-    bool hasLowercase = false;
-    bool hasDigit = false;
-    bool hasSpecial = false;
-    
-    for (const QChar &c : password) {
-        if (c.isUpper()) hasUppercase = true;
-        else if (c.isLower()) hasLowercase = true;
-        else if (c.isDigit()) hasDigit = true;
-        else if (c.isPunct() || c.isSymbol()) hasSpecial = true;
-    }
-    
-    if (hasUppercase) score += 1;
-    if (hasLowercase) score += 1;
-    if (hasDigit) score += 2;
-    if (hasSpecial) score += 3;
-    
-    // Set color and text based on score
-    QString strengthText;
-    QString colorStyle;
-    
-    if (password.isEmpty()) {
-        strengthText = "";
-        colorStyle = "";
-    } else if (score < 6) {
-        strengthText = "Very Weak";
-        colorStyle = "color: #e74c3c;"; // Red
-    } else if (score < 8) {
-        strengthText = "Weak";
-        colorStyle = "color: #e67e22;"; // Orange
-    } else if (score < 10) {
-        strengthText = "Moderate";
-        colorStyle = "color: #f1c40f;"; // Yellow
-    } else if (score < 12) {
-        strengthText = "Strong";
-        colorStyle = "color: #2ecc71;"; // Green
-    } else {
-        strengthText = "Very Strong";
-        colorStyle = "color: #27ae60;"; // Dark Green
-    }
-    
-    strengthLabel->setText(strengthText);
-    strengthLabel->setStyleSheet(colorStyle);
-}
-
 void MainWindow::on_m_cryptoProviderComboBox_currentIndexChanged(const QString &providerName)
 {
     if (!providerName.isEmpty())
@@ -802,49 +639,36 @@ void MainWindow::on_m_cryptoProviderComboBox_currentIndexChanged(const QString &
 
         // Store current selections if possible
         QString currentFileAlgo = ui->fileAlgorithmComboBox->currentText();
-        QString currentFolderAlgo = ui->folderAlgorithmComboBox->currentText();
         QString currentDiskAlgo = ui->diskAlgorithmComboBox->currentText();
         QString currentFileKDF = ui->kdfComboBox->currentText();
-        QString currentFolderKDF = ui->folderKdfComboBox->currentText();
         QString currentDiskKDF = ui->diskKdfComboBox->currentText();
 
         // Update available algorithms and KDFs based on the selected provider
         QStringList algorithms = encryptionEngine.supportedCiphers();
         // Cascades use EVP directly (independent of the selected provider), so
-        // they stay available across provider switches on the file/folder tabs.
+        // they stay available across provider switches on the file tab.
         const QStringList cascades = EncryptionEngine::cascadeAlgorithmNames();
         ui->fileAlgorithmComboBox->clear();
-        ui->folderAlgorithmComboBox->clear();
         ui->diskAlgorithmComboBox->clear();
         ui->fileAlgorithmComboBox->addItems(algorithms);
         ui->fileAlgorithmComboBox->addItems(cascades);
-        ui->folderAlgorithmComboBox->addItems(algorithms);
-        ui->folderAlgorithmComboBox->addItems(cascades);
         ui->diskAlgorithmComboBox->addItems(algorithms);
 
         QStringList kdfs = encryptionEngine.supportedKDFs();
         ui->kdfComboBox->clear();
-        ui->folderKdfComboBox->clear();
         ui->diskKdfComboBox->clear();
         ui->kdfComboBox->addItems(kdfs);
-        ui->folderKdfComboBox->addItems(kdfs);
         ui->diskKdfComboBox->addItems(kdfs);
 
         // Try to restore previous selections if they're available in the new provider
         if (algorithms.contains(currentFileAlgo))
             ui->fileAlgorithmComboBox->setCurrentText(currentFileAlgo);
 
-        if (algorithms.contains(currentFolderAlgo))
-            ui->folderAlgorithmComboBox->setCurrentText(currentFolderAlgo);
-            
         if (algorithms.contains(currentDiskAlgo))
             ui->diskAlgorithmComboBox->setCurrentText(currentDiskAlgo);
 
         if (kdfs.contains(currentFileKDF))
             ui->kdfComboBox->setCurrentText(currentFileKDF);
-
-        if (kdfs.contains(currentFolderKDF))
-            ui->folderKdfComboBox->setCurrentText(currentFolderKDF);
 
         if (kdfs.contains(currentDiskKDF))
             ui->diskKdfComboBox->setCurrentText(currentDiskKDF);
@@ -853,7 +677,6 @@ void MainWindow::on_m_cryptoProviderComboBox_currentIndexChanged(const QString &
         // The currentTextChanged signals above may not fire if the resolved
         // selection happens to equal what the combo already showed.
         applyKdfIterationFloor(ui->kdfComboBox->currentText(), ui->iterationsSpinBox);
-        applyKdfIterationFloor(ui->folderKdfComboBox->currentText(), ui->folderIterationsSpinBox);
         applyKdfIterationFloor(ui->diskKdfComboBox->currentText(), ui->diskIterationsSpinBox);
 
         // Update hardware acceleration status
