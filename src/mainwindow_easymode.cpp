@@ -125,7 +125,7 @@ void MainWindow::buildEasyHome()
                   "(AES-256 + Argon2). Only your password can open it. "
                   "Switch to Advanced mode (Edit menu) to change ciphers, add a "
                   "key file, or split your password into shares.");
-    note->setStyleSheet("color: #555; padding-top: 6px;");
+    note->setStyleSheet("color: #888; padding-top: 6px;");
     root->addWidget(note);
     root->addStretch(1);
 
@@ -217,7 +217,7 @@ void MainWindow::buildEasyHome()
             "encrypting a folder (which makes one .enc you must fully decrypt), a "
             "vault is fixed-size and can be mounted as a drive.", vaultTab);
         vd->setWordWrap(true);
-        vd->setStyleSheet("color:#555;");
+        vd->setStyleSheet("color:#888;");
         QPushButton* createV = new QPushButton("Create Vault...", vaultTab);
         QPushButton* openV   = new QPushButton("Open Vault...", vaultTab);
         createV->setMinimumHeight(40); openV->setMinimumHeight(40);

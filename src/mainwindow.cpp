@@ -77,7 +77,7 @@ MainWindow::MainWindow(QWidget *parent)
     //   Unlock = one-time KDF cost when opening a file
     //   Crack/s = attacker guess rate, CPU-GPU - lower is better (the security
     //             signal; GPU column reflects memory-hardness)
-    QStringList headers = {"Security", "Cipher", "KDF", "Speed", "Unlock", "Crack/s (CPU-GPU)"};
+    QStringList headers = {"Security", "Cipher", "KDF", "Speed", "Unlock", "Crack/s"};
     ui->benchmarkTable->setHorizontalHeaderLabels(headers);
     ui->benchmarkTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     if (auto* hdr = ui->benchmarkTable->horizontalHeaderItem(0)) {
@@ -929,11 +929,11 @@ void MainWindow::on_m_cryptoProviderComboBox_currentIndexChanged(const QString &
         // Update hardware acceleration status
         checkHardwareAcceleration();
 
-        // Show provider capabilities in the status bar
-        QString capabilitiesMessage = QString("Provider: %1 | Ciphers: %2 | KDFs: %3")
+        // Concise status (the full cipher list overflowed the window width).
+        QString capabilitiesMessage = QString("Provider: %1   |   %2 ciphers, %3 KDFs")
                                           .arg(providerName)
-                                          .arg(algorithms.join(", "))
-                                          .arg(kdfs.join(", "));
+                                          .arg(algorithms.size())
+                                          .arg(kdfs.size());
 
         statusBar()->showMessage(capabilitiesMessage, 5000);
     }
