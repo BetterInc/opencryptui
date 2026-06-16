@@ -2,18 +2,13 @@
 #include "ui_mainwindow.h"
 #include <QFileDialog>
 #include <QMessageBox>
-#include <QBuffer>
 #include <QThread>
 #include "logging/secure_logger.h"
 #include <QTextStream>
 #include <QTableWidgetItem>
 #include <QHeaderView>
 #include <QKeyEvent>
-#include <QInputDialog>
 #include <QCoreApplication>
-#include <QDirIterator>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QFile>
 #include <QDir>
 #include <QTimer>
@@ -22,8 +17,6 @@
 #include <QCheckBox>
 #include <QColor>
 #include "encryptionengine.h"
-#include <QDirIterator>
-#include <QProcess>
 #include "version.h"
 #include "encryptionworker.h"
 #include <QStatusBar>

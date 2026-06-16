@@ -7,23 +7,12 @@
 #include "encryptionengine.h"
 #include "encryptionworker.h"
 #include "logging/secure_logger.h"
-#include <QCoreApplication>
 #include <QFileDialog>
 #include <QMessageBox>
-#include <QDir>
-#include <QDirIterator>
 #include <QFile>
-#include <QThread>
-#include <QLabel>
-#include <QProgressBar>
-#include <QCheckBox>
-#include <QComboBox>
+#include <QFileInfo>
+#include <QRegularExpression>
 #include <QLineEdit>
-#include <QPushButton>
-#include <QSpinBox>
-#include <QListWidget>
-#include <QStandardPaths>
-#include <QSettings>
 
 void MainWindow::on_fileEncryptButton_clicked()
 {
