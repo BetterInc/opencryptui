@@ -17,6 +17,7 @@
 #include <QAction>
 #include <QMenu>
 #include <QFont>
+#include <QStatusBar>
 
 // Secure defaults chosen for Easy mode (shown to the user, never hidden).
 static const char* kEasyCipher = "AES-256-GCM";
@@ -156,6 +157,36 @@ void MainWindow::buildEasyHome()
 
     ui->verticalLayout->insertWidget(0, header); // very top, above Easy home + tabs
 
+    // ---- Vault tab in Advanced mode (first-class, not just a menu item) -----
+    {
+        QWidget* vaultTab = new QWidget(ui->tabWidget);
+        QVBoxLayout* v = new QVBoxLayout(vaultTab);
+        v->setContentsMargins(16, 16, 16, 16); v->setSpacing(12);
+        QLabel* vh = new QLabel("Encrypted Vaults", vaultTab);
+        QFont vf = vh->font(); vf.setBold(true); vf.setPointSize(vf.pointSize() + 2); vh->setFont(vf);
+        QLabel* vd = new QLabel(
+            "A vault is a single encrypted container file you can keep anywhere, "
+            "including on a USB stick. It can hold a hidden second volume for "
+            "deniability, and its password can be split into key shares. Unlike "
+            "encrypting a folder (which makes one .enc you must fully decrypt), a "
+            "vault is fixed-size and can be mounted as a drive.", vaultTab);
+        vd->setWordWrap(true);
+        vd->setStyleSheet("color:#555;");
+        QPushButton* createV = new QPushButton("Create Vault...", vaultTab);
+        QPushButton* openV   = new QPushButton("Open Vault...", vaultTab);
+        createV->setMinimumHeight(40); openV->setMinimumHeight(40);
+        createV->setStyleSheet("QPushButton{background:#1b8a3a;color:white;border:none;border-radius:4px;font-weight:bold;}"
+                               " QPushButton:hover{background:#16732f;}");
+        connect(createV, &QPushButton::clicked, this, &MainWindow::on_actionCreateContainer_triggered);
+        connect(openV,   &QPushButton::clicked, this, &MainWindow::on_actionOpenContainer_triggered);
+        v->addWidget(vh); v->addWidget(vd); v->addSpacing(8);
+        v->addWidget(createV); v->addWidget(openV); v->addStretch(1);
+
+        const int benchIdx = ui->tabWidget->indexOf(ui->benchmarkTab);
+        if (benchIdx >= 0) ui->tabWidget->insertTab(benchIdx, vaultTab, "Vault");
+        else               ui->tabWidget->addTab(vaultTab, "Vault");
+    }
+
     // Keep a checkable Edit-menu entry too (muscle memory / accessibility),
     // synced with the header toggle.
     m_advancedModeAction = new QAction("Advanced mode", this);
@@ -174,6 +205,10 @@ void MainWindow::applyUiMode(bool advanced)
 
     if (m_easyHome) m_easyHome->setVisible(!advanced);
     if (ui->tabWidget) ui->tabWidget->setVisible(advanced);
+
+    // The bottom status bar shows the provider/cipher line - advanced info that
+    // just clutters the Easy home. Show it only in Advanced mode.
+    if (statusBar()) statusBar()->setVisible(advanced);
 
     // Hide the crypto-provider row in Easy mode (advanced concept).
     if (ui->providerLayout) {

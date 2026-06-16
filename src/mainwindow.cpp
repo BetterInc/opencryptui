@@ -503,19 +503,9 @@ void MainWindow::connectSignalsAndSlots()
     connect(ui->diskPathLineEdit, &QLineEdit::textChanged, [this](const QString &text) {
         updateSecurityStatus(text, diskSecurityStatusLabel);
     });
-    
-    // Add security tip buttons
-    QPushButton* fileHelpBtn = new QPushButton(QIcon::fromTheme("help-contents"), "Security Tips", this);
-    QPushButton* folderHelpBtn = new QPushButton(QIcon::fromTheme("help-contents"), "Security Tips", this);
-    QPushButton* diskHelpBtn = new QPushButton(QIcon::fromTheme("help-contents"), "Security Tips", this);
-    
-    ui->fileEncryptionGroup->layout()->addWidget(fileHelpBtn);
-    ui->folderEncryptionGroup->layout()->addWidget(folderHelpBtn);
-    ui->diskEncryptionGroup->layout()->addWidget(diskHelpBtn);
-    
-    connect(fileHelpBtn, &QPushButton::clicked, [this](){ showSecurityTips("file"); });
-    connect(folderHelpBtn, &QPushButton::clicked, [this](){ showSecurityTips("folder"); });
-    connect(diskHelpBtn, &QPushButton::clicked, [this](){ showSecurityTips("disk"); });
+
+    // (Per-tab "Security Tips" buttons removed - the Security Guide is now in
+    // the header Help menu, reachable from anywhere without cluttering tabs.)
 
     m_signalsConnected = true;
 }
