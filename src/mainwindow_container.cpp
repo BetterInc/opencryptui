@@ -1,9 +1,10 @@
-// Deniable encrypted container GUI: create / open from the File menu.
+// Vault (deniable encrypted container) GUI: create / open, reached from the
+// Vault tab and the Easy-home "Vault" choice.
 //
 // The core logic (createContainerFromFiles / openContainerToFile) is factored
-// out of the dialog slots so it can be unit-tested without driving native file
-// dialogs. The slots just gather parameters from QDialogs and call the core,
-// showing a live progress bar during the (slow) random-fill on create.
+// out of the dialog handlers so it can be unit-tested without driving native
+// file dialogs. The handlers just gather parameters from QDialogs and call the
+// core, showing a live progress bar during the (slow) random-fill on create.
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "deniable_container.h"
@@ -181,14 +182,14 @@ static QWidget* makePathRow(QWidget* parent, MainWindow* win,
 // ---------------------------------------------------------------------------
 // Dialog slots
 // ---------------------------------------------------------------------------
-void MainWindow::on_actionCreateContainer_triggered()
+void MainWindow::createVault()
 {
     QDialog dlg(this);
-    dlg.setWindowTitle("Create Encrypted Container");
+    dlg.setWindowTitle("Create Vault");
     QFormLayout* form = new QFormLayout(&dlg);
 
     QLineEdit* containerEdit = nullptr;
-    form->addRow("Container file:", makePathRow(&dlg, this, "Container file", true, &containerEdit));
+    form->addRow("Vault file:", makePathRow(&dlg, this, "Vault file", true, &containerEdit));
 
     QSpinBox* sizeSpin = new QSpinBox(&dlg);
     sizeSpin->setRange(1, 1024*1024); sizeSpin->setValue(16); sizeSpin->setSuffix(" MiB");
@@ -238,7 +239,7 @@ void MainWindow::on_actionCreateContainer_triggered()
 
     if (dlg.exec() != QDialog::Accepted) return;
 
-    if (containerEdit->text().isEmpty()) { QMessageBox::warning(this, "Error", "Choose a container file."); return; }
+    if (containerEdit->text().isEmpty()) { QMessageBox::warning(this, "Error", "Choose where to save the vault."); return; }
     if (outerPw->text() != outerPw2->text()) { QMessageBox::warning(this, "Error", "Outer passwords do not match."); return; }
     if (outerPw->text().isEmpty()) { QMessageBox::warning(this, "Error", "Enter an outer password."); return; }
     if (useHidden->isChecked()) {
@@ -247,7 +248,7 @@ void MainWindow::on_actionCreateContainer_triggered()
         if (hiddenPw->text() == outerPw->text()) { QMessageBox::warning(this, "Error", "Outer and hidden passwords must differ."); return; }
     }
 
-    QProgressDialog prog("Creating encrypted container...", QString(), 0, 100, this);
+    QProgressDialog prog("Creating vault...", QString(), 0, 100, this);
     prog.setWindowModality(Qt::WindowModal); prog.setMinimumDuration(0); prog.setValue(0);
 
     QString err;
@@ -277,19 +278,19 @@ void MainWindow::on_actionCreateContainer_triggered()
             }
         }
     }
-    QMessageBox::information(this, "Container created",
-        "Encrypted container created.\n\nThe outer password opens the decoy volume; "
+    QMessageBox::information(this, "Vault created",
+        "Vault created.\n\nThe outer password opens the decoy volume; "
         "the hidden password (if set) opens the real one. The two are "
         "indistinguishable without the hidden password." + shareMsg);
 }
 
-void MainWindow::on_actionOpenContainer_triggered()
+void MainWindow::openVault()
 {
-    QString cpath = QFileDialog::getOpenFileName(this, "Open Encrypted Container");
+    QString cpath = QFileDialog::getOpenFileName(this, "Open Vault");
     if (cpath.isEmpty()) return;
 
     QDialog dlg(this);
-    dlg.setWindowTitle("Open Encrypted Container");
+    dlg.setWindowTitle("Open Vault");
     QFormLayout* form = new QFormLayout(&dlg);
     QLineEdit* pw = new QLineEdit(&dlg); pw->setEchoMode(QLineEdit::Password);
     QWidget* pwRow = new QWidget(&dlg); QHBoxLayout* pwh = new QHBoxLayout(pwRow); pwh->setContentsMargins(0,0,0,0);
@@ -323,7 +324,7 @@ void MainWindow::on_actionOpenContainer_triggered()
     QString err;
     int kind = openContainerToFile(cpath, pw->text(), extractEdit->text(), "Argon2", 3, &err);
     if (kind == 0) { QMessageBox::critical(this, "Open failed", err); return; }
-    QMessageBox::information(this, "Container opened",
+    QMessageBox::information(this, "Vault opened",
         QString("%1 volume extracted to:\n%2")
             .arg(kind == 2 ? "Hidden" : "Outer").arg(extractEdit->text()));
 }

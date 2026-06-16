@@ -44,6 +44,12 @@ static void wrapTabInScrollArea(QWidget* page)
 static const char* kEasyCipher = "AES-256-GCM";
 static const char* kEasyKdf    = "Argon2";
 
+// Accent style for the primary action (Encrypt / Create Vault), used app-wide
+// so the main action is visually obvious. Decrypt/Open keep the neutral default.
+static const char* kAccentButtonQss =
+    "QPushButton{background:#1b8a3a;color:white;border:none;border-radius:4px;"
+    "font-weight:bold;padding:8px;} QPushButton:hover{background:#16732f;}";
+
 void MainWindow::buildEasyHome()
 {
     if (m_easyHome) return;
@@ -74,7 +80,7 @@ void MainWindow::buildEasyHome()
     }
     root->addLayout(seg);
 
-    // Path row (File/Folder only).
+    // Path row (File only; Vault and Disk drive their own dialogs/tabs).
     QHBoxLayout* pathRow = new QHBoxLayout();
     QLabel* pathLabel = new QLabel("File:", m_easyHome);
     pathLabel->setObjectName("easyPathLabel");
@@ -86,9 +92,7 @@ void MainWindow::buildEasyHome()
     pathRow->addWidget(pathLabel); pathRow->addWidget(m_easyPath); pathRow->addWidget(browse);
     root->addLayout(pathRow);
     connect(browse, &QPushButton::clicked, this, [this]{
-        QString p = (m_easyKind == "Folder")
-            ? QFileDialog::getExistingDirectory(this, "Choose a folder")
-            : QFileDialog::getOpenFileName(this, "Choose a file");
+        QString p = QFileDialog::getOpenFileName(this, "Choose a file");
         if (!p.isEmpty()) m_easyPath->setText(p);
     });
 
@@ -110,8 +114,7 @@ void MainWindow::buildEasyHome()
     enc->setObjectName("easyEncryptButton"); dec->setObjectName("easyDecryptButton");
     // Primary action (Encrypt) gets an accent so the hierarchy is obvious;
     // Decrypt stays the default style.
-    enc->setStyleSheet("QPushButton{background:#1b8a3a;color:white;border:none;border-radius:4px;font-weight:bold;}"
-                       " QPushButton:hover{background:#16732f;}");
+    enc->setStyleSheet(kAccentButtonQss);
     actions->addWidget(enc); actions->addWidget(dec);
     root->addLayout(actions);
     connect(enc, &QPushButton::clicked, this, &MainWindow::onEasyEncrypt);
@@ -197,11 +200,8 @@ void MainWindow::buildEasyHome()
 
     // Make the Advanced primary actions match the Easy "Encrypt" accent so the
     // primary action is obvious app-wide; Decrypt stays neutral.
-    const QString accent =
-        "QPushButton{background:#1b8a3a;color:white;border:none;border-radius:4px;"
-        "font-weight:bold;padding:8px;} QPushButton:hover{background:#16732f;}";
-    if (ui->diskEncryptButton) ui->diskEncryptButton->setStyleSheet(accent);
-    if (ui->fileEncryptButton) ui->fileEncryptButton->setStyleSheet(accent);
+    if (ui->diskEncryptButton) ui->diskEncryptButton->setStyleSheet(kAccentButtonQss);
+    if (ui->fileEncryptButton) ui->fileEncryptButton->setStyleSheet(kAccentButtonQss);
 
     // ---- Vault tab in Advanced mode (first-class, not just a menu item) -----
     {
@@ -221,10 +221,9 @@ void MainWindow::buildEasyHome()
         QPushButton* createV = new QPushButton("Create Vault...", vaultTab);
         QPushButton* openV   = new QPushButton("Open Vault...", vaultTab);
         createV->setMinimumHeight(40); openV->setMinimumHeight(40);
-        createV->setStyleSheet("QPushButton{background:#1b8a3a;color:white;border:none;border-radius:4px;font-weight:bold;}"
-                               " QPushButton:hover{background:#16732f;}");
-        connect(createV, &QPushButton::clicked, this, &MainWindow::on_actionCreateContainer_triggered);
-        connect(openV,   &QPushButton::clicked, this, &MainWindow::on_actionOpenContainer_triggered);
+        createV->setStyleSheet(kAccentButtonQss);
+        connect(createV, &QPushButton::clicked, this, &MainWindow::createVault);
+        connect(openV,   &QPushButton::clicked, this, &MainWindow::openVault);
         v->addWidget(vh); v->addWidget(vd); v->addSpacing(8);
         v->addWidget(createV); v->addWidget(openV); v->addStretch(1);
 
@@ -258,13 +257,12 @@ void MainWindow::applyUiMode(bool advanced)
 
     // (The crypto-provider row is removed entirely in buildEasyHome.)
 
-    // Easy-home widgets that only apply to File/Folder.
-    const bool inlineFields = !advanced && (m_easyKind == "File" || m_easyKind == "Folder");
-    const bool vaultOrDisk  = !advanced && (m_easyKind == "Vault" || m_easyKind == "Disk");
+    // Easy-home path/password widgets apply only to the File kind; Vault and
+    // Disk drive their own dialogs/tabs.
+    const bool inlineFields = !advanced && m_easyKind == "File";
     if (m_easyHome) {
         if (auto* pl = m_easyHome->findChild<QLabel*>("easyPathLabel")) {
             pl->setVisible(inlineFields);
-            pl->setText(m_easyKind == "Folder" ? "Folder:" : "File:");
         }
         if (m_easyPath)     m_easyPath->setVisible(inlineFields);
         if (auto* b = m_easyHome->findChild<QPushButton*>("easyBrowse")) b->setVisible(inlineFields);
@@ -289,7 +287,6 @@ void MainWindow::applyUiMode(bool advanced)
                               "encryption (AES-256 + Argon2). Only your password can "
                               "open it. Switch to Advanced mode for more options.");
         }
-        Q_UNUSED(vaultOrDisk);
     }
 
     if (m_advancedModeAction && m_advancedModeAction->isChecked() != advanced) {
@@ -308,52 +305,34 @@ void MainWindow::applyUiMode(bool advanced)
 
 void MainWindow::onEasyEncrypt()
 {
-    if (m_easyKind == "Vault") { on_actionCreateContainer_triggered(); return; }
+    if (m_easyKind == "Vault") { createVault(); return; }
     if (m_easyKind == "Disk")  { applyUiMode(true); savePreferences();
         if (ui->tabWidget) ui->tabWidget->setCurrentIndex(0); return; }
 
-    if (m_easyPath->text().isEmpty()) { QMessageBox::warning(this, "Choose a file", "Please choose a file or folder first."); return; }
+    if (m_easyPath->text().isEmpty()) { QMessageBox::warning(this, "Choose a file", "Please choose a file first."); return; }
     if (m_easyPassword->text().isEmpty()) { QMessageBox::warning(this, "Password", "Please enter a password."); return; }
     if (m_easyPassword->text() != m_easyConfirm->text()) { QMessageBox::warning(this, "Password", "The two passwords do not match."); return; }
 
-    const bool isFile = (m_easyKind == "File");
-    // Feed the existing (advanced) widgets with secure defaults, then call the
-    // same tested slot the Advanced UI uses.
-    if (isFile) {
-        ui->filePathLineEdit->setText(m_easyPath->text());
-        ui->filePasswordLineEdit->setText(m_easyPassword->text());
-        ui->fileAlgorithmComboBox->setCurrentText(kEasyCipher);
-        ui->kdfComboBox->setCurrentText(kEasyKdf);
-        on_fileEncryptButton_clicked();
-    } else {
-        ui->folderPathLineEdit->setText(m_easyPath->text());
-        ui->folderPasswordLineEdit->setText(m_easyPassword->text());
-        ui->folderAlgorithmComboBox->setCurrentText(kEasyCipher);
-        ui->folderKdfComboBox->setCurrentText(kEasyKdf);
-        on_folderEncryptButton_clicked();
-    }
+    // Feed the existing (advanced) File widgets with secure defaults, then call
+    // the same tested slot the Advanced UI uses.
+    ui->filePathLineEdit->setText(m_easyPath->text());
+    ui->filePasswordLineEdit->setText(m_easyPassword->text());
+    ui->fileAlgorithmComboBox->setCurrentText(kEasyCipher);
+    ui->kdfComboBox->setCurrentText(kEasyKdf);
+    on_fileEncryptButton_clicked();
 }
 
 void MainWindow::onEasyDecrypt()
 {
-    if (m_easyKind == "Vault") { on_actionOpenContainer_triggered(); return; }
+    if (m_easyKind == "Vault") { openVault(); return; }
     if (m_easyKind == "Disk")  return; // no decrypt button shown for Disk
 
-    if (m_easyPath->text().isEmpty()) { QMessageBox::warning(this, "Choose a file", "Please choose the encrypted file or folder first."); return; }
+    if (m_easyPath->text().isEmpty()) { QMessageBox::warning(this, "Choose a file", "Please choose the encrypted file first."); return; }
     if (m_easyPassword->text().isEmpty()) { QMessageBox::warning(this, "Password", "Please enter your password."); return; }
 
-    const bool isFile = (m_easyKind == "File");
-    if (isFile) {
-        ui->filePathLineEdit->setText(m_easyPath->text());
-        ui->filePasswordLineEdit->setText(m_easyPassword->text());
-        ui->fileAlgorithmComboBox->setCurrentText(kEasyCipher);
-        ui->kdfComboBox->setCurrentText(kEasyKdf);
-        on_fileDecryptButton_clicked();
-    } else {
-        ui->folderPathLineEdit->setText(m_easyPath->text());
-        ui->folderPasswordLineEdit->setText(m_easyPassword->text());
-        ui->folderAlgorithmComboBox->setCurrentText(kEasyCipher);
-        ui->folderKdfComboBox->setCurrentText(kEasyKdf);
-        on_folderDecryptButton_clicked();
-    }
+    ui->filePathLineEdit->setText(m_easyPath->text());
+    ui->filePasswordLineEdit->setText(m_easyPassword->text());
+    ui->fileAlgorithmComboBox->setCurrentText(kEasyCipher);
+    ui->kdfComboBox->setCurrentText(kEasyKdf);
+    on_fileDecryptButton_clicked();
 }

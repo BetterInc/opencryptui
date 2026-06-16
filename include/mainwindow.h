@@ -84,8 +84,9 @@ private slots:
     void on_actionAboutKDFs_triggered();
     void on_actionAboutIterations_triggered();
     void on_actionSecurityGuide_triggered();
-    void on_actionCreateContainer_triggered();
-    void on_actionOpenContainer_triggered();
+    // Vault create/open dialogs (reached from the Vault tab and Easy "Vault").
+    void createVault();
+    void openVault();
     void on_m_cryptoProviderComboBox_currentIndexChanged(const QString &providerName);
     void showProviderCapabilities();
     void updateBenchmarkTable(int iterations, double mbps, double ms, const QString &algorithm, const QString &kdf);
@@ -149,7 +150,7 @@ private:
     // above the existing tabs; mode toggles which is visible).
     bool m_advancedMode = false;
     QWidget   *m_easyHome = nullptr;
-    QString    m_easyKind = "File";     // File | Folder | Vault | Disk
+    QString    m_easyKind = "File";     // File | Vault | Disk
     class QLineEdit *m_easyPath = nullptr;
     class QLineEdit *m_easyPassword = nullptr;
     class QLineEdit *m_easyConfirm = nullptr;
@@ -185,7 +186,6 @@ private:
     void connectSignalsAndSlots();
     void startWorker(bool encrypt, bool isFile);
     void updateSecurityStatus(const QString &path, QLabel *statusLabel);
-    void showSecurityTips(const QString &context);
     void checkPasswordStrength(const QString &password);
     void checkHardwareAcceleration();
     void applyTheme(const QString &theme);
