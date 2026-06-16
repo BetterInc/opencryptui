@@ -18,6 +18,27 @@
 #include <QMenu>
 #include <QFont>
 #include <QStatusBar>
+#include <QScrollArea>
+#include <QTabWidget>
+
+// Wrap a tab page's existing content in a scroll area so its stacked group
+// boxes get their natural height (and scroll if the window is short) instead
+// of collapsing into overlapping slivers. Moves the page's current layout into
+// a content widget held by the scroll area.
+static void wrapTabInScrollArea(QWidget* page)
+{
+    if (!page || !page->layout()) return;
+    QLayout* inner = page->layout();
+    QWidget* content = new QWidget();
+    content->setLayout(inner);                 // reparents inner + its children
+    QScrollArea* sa = new QScrollArea(page);
+    sa->setWidgetResizable(true);
+    sa->setFrameShape(QFrame::NoFrame);
+    sa->setWidget(content);
+    QVBoxLayout* pl = new QVBoxLayout(page);    // page now has no layout; set new
+    pl->setContentsMargins(0, 0, 0, 0);
+    pl->addWidget(sa);
+}
 
 // Secure defaults chosen for Easy mode (shown to the user, never hidden).
 static const char* kEasyCipher = "AES-256-GCM";
@@ -61,6 +82,7 @@ void MainWindow::buildEasyHome()
     m_easyPath->setObjectName("easyPath");
     m_easyPath->setPlaceholderText("Choose a file to protect");
     QPushButton* browse = new QPushButton("Browse...", m_easyHome);
+    browse->setObjectName("easyBrowse");
     pathRow->addWidget(pathLabel); pathRow->addWidget(m_easyPath); pathRow->addWidget(browse);
     root->addLayout(pathRow);
     connect(browse, &QPushButton::clicked, this, [this]{
@@ -168,6 +190,19 @@ void MainWindow::buildEasyHome()
                 w->setVisible(false);
     }
 
+    // Fix the Disk/File settings tabs collapsing: give them scroll areas so the
+    // stacked group boxes get full height at any window size.
+    wrapTabInScrollArea(ui->diskTab);
+    wrapTabInScrollArea(ui->fileTab);
+
+    // Make the Advanced primary actions match the Easy "Encrypt" accent so the
+    // primary action is obvious app-wide; Decrypt stays neutral.
+    const QString accent =
+        "QPushButton{background:#1b8a3a;color:white;border:none;border-radius:4px;"
+        "font-weight:bold;padding:8px;} QPushButton:hover{background:#16732f;}";
+    if (ui->diskEncryptButton) ui->diskEncryptButton->setStyleSheet(accent);
+    if (ui->fileEncryptButton) ui->fileEncryptButton->setStyleSheet(accent);
+
     // ---- Vault tab in Advanced mode (first-class, not just a menu item) -----
     {
         QWidget* vaultTab = new QWidget(ui->tabWidget);
@@ -232,6 +267,7 @@ void MainWindow::applyUiMode(bool advanced)
             pl->setText(m_easyKind == "Folder" ? "Folder:" : "File:");
         }
         if (m_easyPath)     m_easyPath->setVisible(inlineFields);
+        if (auto* b = m_easyHome->findChild<QPushButton*>("easyBrowse")) b->setVisible(inlineFields);
         if (m_easyPassword) m_easyPassword->setVisible(inlineFields);
         if (m_easyConfirm)  m_easyConfirm->setVisible(inlineFields);
         if (auto* enc = m_easyHome->findChild<QPushButton*>("easyEncryptButton"))
