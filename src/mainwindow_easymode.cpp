@@ -85,6 +85,10 @@ void MainWindow::buildEasyHome()
     QPushButton* dec = new QPushButton("Decrypt", m_easyHome);
     enc->setMinimumHeight(44); dec->setMinimumHeight(44);
     enc->setObjectName("easyEncryptButton"); dec->setObjectName("easyDecryptButton");
+    // Primary action (Encrypt) gets an accent so the hierarchy is obvious;
+    // Decrypt stays the default style.
+    enc->setStyleSheet("QPushButton{background:#1b8a3a;color:white;border:none;border-radius:4px;font-weight:bold;}"
+                       " QPushButton:hover{background:#16732f;}");
     actions->addWidget(enc); actions->addWidget(dec);
     root->addLayout(actions);
     connect(enc, &QPushButton::clicked, this, &MainWindow::onEasyEncrypt);
@@ -105,7 +109,55 @@ void MainWindow::buildEasyHome()
     // Insert the Easy home at the top of the central layout, above the tabs.
     ui->verticalLayout->insertWidget(0, m_easyHome);
 
-    // Advanced-mode toggle in the Edit menu (checkable).
+    // ---- Persistent header bar with an always-visible mode switch ----------
+    // The switch used to live only in the Edit menu (undiscoverable). Now it's
+    // a labeled segmented toggle at the top-right, visible in both modes, so a
+    // user can move between Easy and Advanced in one obvious click.
+    QWidget* header = new QWidget(this);
+    header->setObjectName("appHeader");
+    QHBoxLayout* hb = new QHBoxLayout(header);
+    hb->setContentsMargins(12, 6, 12, 6);
+
+    QLabel* appName = new QLabel("OpenCryptUI", header);
+    QFont nf = appName->font(); nf.setBold(true); appName->setFont(nf);
+    hb->addWidget(appName);
+    hb->addStretch(1);
+
+    QLabel* modeLabel = new QLabel("Mode:", header);
+    hb->addWidget(modeLabel);
+    QPushButton* easyBtn = new QPushButton("Easy", header);
+    QPushButton* advBtn  = new QPushButton("Advanced", header);
+    easyBtn->setObjectName("modeEasyButton");
+    advBtn->setObjectName("modeAdvancedButton");
+    easyBtn->setCheckable(true); advBtn->setCheckable(true);
+    easyBtn->setChecked(true);
+    QButtonGroup* modeGroup = new QButtonGroup(header);
+    modeGroup->setExclusive(true);
+    modeGroup->addButton(easyBtn); modeGroup->addButton(advBtn);
+    // Joined segmented look.
+    easyBtn->setStyleSheet("QPushButton{border:1px solid #888;border-right:none;border-top-left-radius:4px;border-bottom-left-radius:4px;padding:4px 14px;} QPushButton:checked{background:#3a76d8;color:white;}");
+    advBtn->setStyleSheet("QPushButton{border:1px solid #888;border-top-right-radius:4px;border-bottom-right-radius:4px;padding:4px 14px;} QPushButton:checked{background:#3a76d8;color:white;}");
+    hb->addWidget(easyBtn); hb->addWidget(advBtn);
+    connect(easyBtn, &QPushButton::clicked, this, [this]{ applyUiMode(false); savePreferences(); });
+    connect(advBtn,  &QPushButton::clicked, this, [this]{ applyUiMode(true);  savePreferences(); });
+
+    // Help button with a discoverable menu of the key actions.
+    QPushButton* helpBtn = new QPushButton("Help", header);
+    helpBtn->setObjectName("helpButton");
+    QMenu* helpMenu = new QMenu(helpBtn);
+    helpMenu->addAction("Create Vault...", this, &MainWindow::on_actionCreateContainer_triggered);
+    helpMenu->addAction("Open Vault...",   this, &MainWindow::on_actionOpenContainer_triggered);
+    helpMenu->addSeparator();
+    helpMenu->addAction("Security Guide",  this, &MainWindow::on_actionSecurityGuide_triggered);
+    helpMenu->addAction("About",           this, &MainWindow::on_actionAbout_triggered);
+    helpBtn->setMenu(helpMenu);
+    hb->addSpacing(12);
+    hb->addWidget(helpBtn);
+
+    ui->verticalLayout->insertWidget(0, header); // very top, above Easy home + tabs
+
+    // Keep a checkable Edit-menu entry too (muscle memory / accessibility),
+    // synced with the header toggle.
     m_advancedModeAction = new QAction("Advanced mode", this);
     m_advancedModeAction->setObjectName("advancedModeAction");
     m_advancedModeAction->setCheckable(true);
@@ -167,6 +219,14 @@ void MainWindow::applyUiMode(bool advanced)
     if (m_advancedModeAction && m_advancedModeAction->isChecked() != advanced) {
         QSignalBlocker block(m_advancedModeAction);
         m_advancedModeAction->setChecked(advanced);
+    }
+    // Keep the header segmented toggle in sync (e.g. when mode is set from the
+    // menu, from preferences load, or programmatically).
+    if (auto* eb = findChild<QPushButton*>("modeEasyButton")) {
+        QSignalBlocker b(eb); eb->setChecked(!advanced);
+    }
+    if (auto* ab = findChild<QPushButton*>("modeAdvancedButton")) {
+        QSignalBlocker b(ab); ab->setChecked(advanced);
     }
 }
 

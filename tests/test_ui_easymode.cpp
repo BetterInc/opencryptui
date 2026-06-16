@@ -14,7 +14,10 @@ void TestOpenCryptUI::testEasyModeToggleAndEncrypt()
     QVERIFY(tabs);
     QVERIFY(advAct);
 
-    // Default is Easy: home visible, tabs hidden.
+    // The mode is persisted in config.json, so don't assume the startup value.
+    // Force Easy, then verify both transitions.
+    advAct->setChecked(false);
+    QApplication::processEvents();
     QVERIFY(easyHome->isVisible());
     QVERIFY(!tabs->isVisible());
 
@@ -29,6 +32,10 @@ void TestOpenCryptUI::testEasyModeToggleAndEncrypt()
     QApplication::processEvents();
     QVERIFY(easyHome->isVisible());
     QVERIFY(!tabs->isVisible());
+
+    // The header segmented toggle must stay in sync with the mode.
+    if (QPushButton* easyBtn = mainWindow->findChild<QPushButton*>("modeEasyButton"))
+        QVERIFY(easyBtn->isChecked());
 
     // Easy-mode encrypt/decrypt of a file (kind defaults to "File").
     QLineEdit* path = mainWindow->findChild<QLineEdit*>("easyPath");
