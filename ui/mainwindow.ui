@@ -1367,9 +1367,6 @@
                 <property name="title">
                     <string>File</string>
                 </property>
-                <addaction name="actionCreateContainer"/>
-                <addaction name="actionOpenContainer"/>
-                <addaction name="separator"/>
                 <addaction name="actionExit"/>
             </widget>
             <widget class="QMenu" name="menuEdit">
