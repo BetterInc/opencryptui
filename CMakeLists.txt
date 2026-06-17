@@ -200,6 +200,8 @@ set(LIBRARY_SOURCES
     include/deniable_container.h
     src/block_volume.cpp
     include/block_volume.h
+    src/vault_mount.cpp
+    include/vault_mount.h
     src/shamir.cpp
     include/shamir.h
     src/hwkey_stub.cpp
@@ -492,6 +494,15 @@ add_engine_test(TestEngineCascade       tests/test_engine_cascade.cpp)
 add_engine_test(TestDeniableContainer   tests/test_deniable_container.cpp)
 add_engine_test(TestBlockVolume         tests/test_block_volume.cpp)
 add_engine_test(TestShamir              tests/test_shamir.cpp)
+
+# VaultMounter integration test - only meaningful when the FUSE driver exists.
+# Self-SKIPs at runtime when FUSE is unavailable in the environment.
+if(OCUI_ENABLE_FUSE)
+    add_engine_test(TestVaultMount      tests/test_vault_mount.cpp)
+    add_dependencies(TestVaultMount opencryptui-mount)
+    add_test(NAME VaultMount COMMAND TestVaultMount)
+    set_tests_properties(VaultMount PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+endif()
 
 # End-to-end black-box test: exercises the shipped OpenCryptUI binary via
 # QProcess (startup smoke) plus engine round-trip and tamper-rejection cases
