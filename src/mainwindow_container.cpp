@@ -473,6 +473,24 @@ QWidget* MainWindow::buildMountSection(QWidget* parent)
     intro->setStyleSheet("color:#888;");
     col->addWidget(intro);
 
+    // State the platform's one-time requirements up front, so it is clear what
+    // (if anything) needs installing - not a surprise only when a mount fails.
+    QLabel* reqs = new QLabel(box);
+    reqs->setWordWrap(true);
+    reqs->setStyleSheet("color:#a06000;");
+#if defined(Q_OS_WIN)
+    reqs->setText("Windows: mounting as a drive needs two free, one-time installs - "
+                  "WinFsp (winfsp.dev) for live decryption and ImDisk (ltr-data.se) to "
+                  "attach the drive. Without them the vault still opens, just not as a drive.");
+#elif defined(Q_OS_MACOS)
+    reqs->setText("macOS: mounting as a drive needs macFUSE (macfuse.io), a one-time install.");
+#else
+    reqs->setText("Linux: mounting uses FUSE (fuse3) and asks for your password once "
+                  "(pkexec) to attach the drive; without admin rights the decrypted image "
+                  "is still exposed for you to mount manually.");
+#endif
+    col->addWidget(reqs);
+
     // If the mount helper isn't built/usable, say so plainly and disable the
     // controls rather than failing later.
     QString whyNot;
