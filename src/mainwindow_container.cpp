@@ -10,6 +10,7 @@
 #include "deniable_container.h"
 #include "encryptionengine.h"
 #include "shamir.h"
+#include "vault_mount.h"
 #include "logging/secure_logger.h"
 #include <QFile>
 #include <QFileDialog>
@@ -30,6 +31,9 @@
 #include <QGroupBox>
 #include <QScrollArea>
 #include <QLabel>
+#include <QListWidget>
+#include <QDesktopServices>
+#include <QUrl>
 #include <QVector>
 #include <cmath>
 #include <sodium.h>
@@ -419,6 +423,9 @@ QWidget* MainWindow::buildVaultTab()
     });
 
     outer->addWidget(openBox);
+
+    // ---- Mount as a drive --------------------------------------------------
+    outer->addWidget(buildMountSection(page));
     outer->addStretch(1);
 
     // Scroll so the stacked group boxes get full height on short windows.
@@ -427,4 +434,151 @@ QWidget* MainWindow::buildVaultTab()
     sa->setFrameShape(QFrame::NoFrame);
     sa->setWidget(page);
     return sa;
+}
+
+// ---------------------------------------------------------------------------
+// "Mount as a drive" section of the Vault tab
+// ---------------------------------------------------------------------------
+void MainWindow::refreshMountList()
+{
+    if (!m_mountList || !m_mounter) return;
+    m_mountList->clear();
+    const auto& active = m_mounter->active();
+    for (int i = 0; i < active.size(); ++i) {
+        const auto& m = active.at(i);
+        const QString open = m.realDrive ? m.drivePath : m.fuseDir;
+        const QString label = QString("%1  %2  %3")
+            .arg(QFileInfo(m.volumePath).fileName(),
+                 m.realDrive ? "[drive]" : "[image]",
+                 open);
+        QListWidgetItem* it = new QListWidgetItem(label, m_mountList);
+        it->setData(Qt::UserRole, open);     // path to open
+    }
+}
+
+QWidget* MainWindow::buildMountSection(QWidget* parent)
+{
+    if (!m_mounter) m_mounter = new VaultMounter(this);
+
+    QGroupBox* box = new QGroupBox("Mount as a drive (live, on-the-fly encryption)", parent);
+    QVBoxLayout* col = new QVBoxLayout(box);
+    col->setSpacing(10);
+
+    QLabel* intro = new QLabel(
+        "A mountable vault opens as a real drive: files are decrypted as you read "
+        "them and re-encrypted as you write, so nothing plaintext ever touches the "
+        "disk. With administrator rights it appears as a normal drive; without them "
+        "it still mounts, exposing the decrypted image for you to finish mounting.", box);
+    intro->setWordWrap(true);
+    intro->setStyleSheet("color:#888;");
+    col->addWidget(intro);
+
+    // If the mount helper isn't built/usable, say so plainly and disable the
+    // controls rather than failing later.
+    QString whyNot;
+    const bool canMount = m_mounter->available(&whyNot);
+    if (!canMount) {
+        QLabel* warn = new QLabel("Mounting is unavailable: " + whyNot, box);
+        warn->setWordWrap(true);
+        warn->setStyleSheet("color:#b00; font-weight:bold;");
+        col->addWidget(warn);
+    }
+
+    // --- Create a mountable vault ---
+    QGroupBox* createBox = new QGroupBox("Create a mountable vault", box);
+    QFormLayout* cf = new QFormLayout(createBox);
+    QLineEdit* cPath = nullptr;
+    cf->addRow("Save vault as:", makePathRow(createBox, this, "Save mountable vault as", true, &cPath));
+    QDoubleSpinBox* sVal = nullptr; QComboBox* sUnit = nullptr;
+    cf->addRow("Size:", makeSizeRow(createBox, &sVal, &sUnit));
+    QLineEdit* cPw  = new QLineEdit(createBox); cPw->setEchoMode(QLineEdit::Password);
+    QLineEdit* cPw2 = new QLineEdit(createBox); cPw2->setEchoMode(QLineEdit::Password);
+    cf->addRow("Password:", cPw);
+    cf->addRow("Confirm:", cPw2);
+    QPushButton* createMBtn = new QPushButton("Create mountable vault", createBox);
+    createMBtn->setMinimumHeight(36);
+    createMBtn->setStyleSheet(
+        "QPushButton{background:#1b8a3a;color:white;border:none;border-radius:4px;"
+        "font-weight:bold;padding:8px;} QPushButton:hover{background:#16732f;}");
+    cf->addRow(createMBtn);
+    col->addWidget(createBox);
+
+    connect(createMBtn, &QPushButton::clicked, this, [=]{
+        if (cPath->text().isEmpty()) { QMessageBox::warning(this, "Error", "Choose where to save the vault."); return; }
+        if (cPw->text().isEmpty()) { QMessageBox::warning(this, "Error", "Enter a password."); return; }
+        if (cPw->text() != cPw2->text()) { QMessageBox::warning(this, "Error", "Passwords do not match."); return; }
+        QProgressDialog prog("Creating mountable vault (filling with random data)...", QString(), 0, 0, this);
+        prog.setWindowModality(Qt::WindowModal); prog.setMinimumDuration(0); prog.show();
+        QApplication::processEvents();
+        QString err;
+        const bool ok = m_mounter->createMountable(cPath->text(), sizeRowToMiB(sVal, sUnit),
+                                                    cPw->text(), "Argon2", 10, &err);
+        prog.close();
+        cPw->clear(); cPw2->clear();
+        if (!ok) { QMessageBox::critical(this, "Create failed", err); return; }
+        QMessageBox::information(this, "Mountable vault created",
+            "Created. Use \"Mount\" below to open it as a live drive.");
+    });
+
+    // --- Mount an existing vault ---
+    QGroupBox* mountBox = new QGroupBox("Mount a vault", box);
+    QFormLayout* mf = new QFormLayout(mountBox);
+    QLineEdit* mPath = nullptr;
+    mf->addRow("Vault file:", makePathRow(mountBox, this, "Mount vault", false, &mPath));
+    QLineEdit* mPw = new QLineEdit(mountBox); mPw->setEchoMode(QLineEdit::Password);
+    mf->addRow("Password:", mPw);
+    QPushButton* mountBtn = new QPushButton("Mount", mountBox);
+    mountBtn->setMinimumHeight(36);
+    mf->addRow(mountBtn);
+    col->addWidget(mountBox);
+
+    connect(mountBtn, &QPushButton::clicked, this, [=]{
+        if (mPath->text().isEmpty()) { QMessageBox::warning(this, "Error", "Choose the vault file to mount."); return; }
+        if (mPw->text().isEmpty()) { QMessageBox::warning(this, "Error", "Enter the vault password."); return; }
+        QString openPath, err; bool usedFallback = false;
+        const bool ok = m_mounter->mount(mPath->text(), mPw->text(), "Argon2", 10,
+                                         &openPath, &usedFallback, &err);
+        mPw->clear();
+        if (!ok) { QMessageBox::critical(this, "Mount failed", err); return; }
+        refreshMountList();
+        QDesktopServices::openUrl(QUrl::fromLocalFile(openPath));
+        if (usedFallback)
+            QMessageBox::information(this, "Mounted (image)",
+                QString("Mounted, but a real drive needs administrator rights, so the "
+                        "decrypted image is exposed here:\n\n%1\n\nTo finish, run:\n"
+                        "  sudo mount -o loop %1/disk.img /your/mountpoint").arg(openPath));
+        else
+            QMessageBox::information(this, "Mounted",
+                QString("Vault mounted as a drive at:\n\n%1\n\nUnmount it below when done.").arg(openPath));
+    });
+
+    // --- Active mounts ---
+    QGroupBox* activeBox = new QGroupBox("Mounted vaults", box);
+    QVBoxLayout* av = new QVBoxLayout(activeBox);
+    m_mountList = new QListWidget(activeBox);
+    av->addWidget(m_mountList);
+    QHBoxLayout* actions = new QHBoxLayout();
+    QPushButton* openBtn = new QPushButton("Open", activeBox);
+    QPushButton* unmountBtn = new QPushButton("Unmount", activeBox);
+    actions->addWidget(openBtn); actions->addWidget(unmountBtn); actions->addStretch(1);
+    av->addLayout(actions);
+    col->addWidget(activeBox);
+
+    connect(openBtn, &QPushButton::clicked, this, [this]{
+        QListWidgetItem* it = m_mountList->currentItem();
+        if (it) QDesktopServices::openUrl(QUrl::fromLocalFile(it->data(Qt::UserRole).toString()));
+    });
+    connect(unmountBtn, &QPushButton::clicked, this, [this]{
+        const int row = m_mountList->currentRow();
+        if (row < 0) { QMessageBox::information(this, "Unmount", "Select a mounted vault first."); return; }
+        QString err;
+        if (!m_mounter->unmount(row, &err)) { QMessageBox::warning(this, "Unmount failed", err); return; }
+        refreshMountList();
+    });
+
+    if (!canMount) {
+        createMBtn->setEnabled(false);
+        mountBtn->setEnabled(false);
+    }
+    return box;
 }

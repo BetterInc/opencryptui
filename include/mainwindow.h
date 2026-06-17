@@ -131,6 +131,9 @@ private:
     // mode; sizeRowToMiB() reads its resolved size. createVaultWithProgress()
     // wraps the (slow) random-fill create in a modal progress bar.
     QWidget* buildVaultTab();
+    // "Mount as a drive" group inside the Vault tab + its active-mount list.
+    QWidget* buildMountSection(QWidget* parent);
+    void refreshMountList();
     QWidget* makeSizeRow(QWidget* parent, class QDoubleSpinBox** outVal, class QComboBox** outUnit);
     static qint64 sizeRowToMiB(const class QDoubleSpinBox* val, const class QComboBox* unit);
     bool createVaultWithProgress(const QString& path, qint64 sizeMiB,
@@ -147,6 +150,8 @@ private slots:
 private:
     Ui::MainWindow *ui;
     EncryptionEngine encryptionEngine;
+    class VaultMounter *m_mounter = nullptr;   // lazily created by the Vault tab
+    class QListWidget  *m_mountList = nullptr;  // active mounts shown in the tab
     EncryptionWorker *worker;
     QThread workerThread;
     bool m_signalsConnected;
