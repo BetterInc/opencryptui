@@ -27,8 +27,10 @@
 #include <QString>
 #include <cstdio>
 #include <cstring>
-#include <termios.h>
+#ifndef _WIN32
+#include <termios.h>   // interactive no-echo password prompt (POSIX only)
 #include <unistd.h>
+#endif
 
 // Single global mount state (one volume per process).
 namespace {
@@ -119,12 +121,18 @@ static QString promptPassword(const char* prompt)
 {
     std::fprintf(stderr, "%s", prompt);
     std::fflush(stderr);
+#ifndef _WIN32
+    // Disable terminal echo while typing the password (interactive use only).
+    // When the GUI drives us it pipes the password via stdin, so this is moot.
     termios oldt{}; tcgetattr(STDIN_FILENO, &oldt);
     termios noecho = oldt; noecho.c_lflag &= ~ECHO;
     tcsetattr(STDIN_FILENO, TCSANOW, &noecho);
+#endif
     char line[1024] = {0};
     if (!fgets(line, sizeof(line), stdin)) line[0] = '\0';
+#ifndef _WIN32
     tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+#endif
     std::fprintf(stderr, "\n");
     QString p = QString::fromUtf8(line).trimmed();
     return p;

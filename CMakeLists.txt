@@ -311,30 +311,62 @@ target_link_libraries(OpenCryptUI PRIVATE EncryptionLib)
 add_dependencies(OpenCryptUI GenerateVersionHeader)
 
 # ---- Mountable containers: FUSE driver (Linux/macOS via FUSE, Windows WinFsp) ----
-# Off by default; needs libfuse3-dev. The same source builds against WinFsp
-# (Windows) and macFUSE (macOS), which expose the libfuse API.
-option(OCUI_ENABLE_FUSE "Build opencryptui-mount (needs libfuse3)" OFF)
+# Off by default. The same source (libfuse3 high-level API) builds against:
+#   Linux  : libfuse3      (apt install libfuse3-dev)
+#   macOS  : macFUSE/fuse-t exposing the fuse3 pkg-config module
+#   Windows: WinFsp         (winfsp.dev), which ships a libfuse3-compatible API
+option(OCUI_ENABLE_FUSE "Build opencryptui-mount (needs libfuse3 / macFUSE / WinFsp)" OFF)
 if(OCUI_ENABLE_FUSE)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(FUSE3 REQUIRED IMPORTED_TARGET fuse3)
     add_executable(opencryptui-mount src/fuse_mount.cpp)
     set_target_properties(opencryptui-mount PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_include_directories(opencryptui-mount PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/include/logging)
     target_link_libraries(opencryptui-mount PRIVATE
-        EncryptionLib PkgConfig::FUSE3
-        Qt5::Core OpenSSL::SSL OpenSSL::Crypto argon2 sodium)
-    target_compile_options(opencryptui-mount PRIVATE ${ENGINE_HARDENING_CFLAGS} ${ENGINE_HARDENING_FORTIFY})
-    target_link_options(opencryptui-mount PRIVATE ${ENGINE_HARDENING_LFLAGS})
-    message(STATUS "FUSE mount driver: ENABLED (fuse3 ${FUSE3_VERSION})")
+        EncryptionLib Qt5::Core OpenSSL::SSL OpenSSL::Crypto argon2 sodium)
 
-    # Real end-to-end mount test: create → mount → write → read → verify no
-    # plaintext on disk → unmount → remount (persistence) → wrong-password.
-    # Skips (not fails) when /dev/fuse is unavailable (return code 77).
-    add_test(NAME FuseMountE2E
-             COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuse_mount_e2e.sh $<TARGET_FILE:opencryptui-mount>)
-    set_tests_properties(FuseMountE2E PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+    if(WIN32)
+        # WinFsp provides the libfuse3 API on Windows. Use the standard install
+        # dir or pass -DWINFSP_DIR=... ; link the arch-matched import lib.
+        if(NOT WINFSP_DIR)
+            set(WINFSP_DIR "$ENV{ProgramFiles\(x86\)}/WinFsp")
+        endif()
+        if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+            set(_winfsp_lib "${WINFSP_DIR}/lib/winfsp-x64.lib")
+        else()
+            set(_winfsp_lib "${WINFSP_DIR}/lib/winfsp-x86.lib")
+        endif()
+        if(NOT EXISTS "${WINFSP_DIR}/inc/fuse3/fuse.h")
+            message(FATAL_ERROR "WinFsp FUSE headers not found under ${WINFSP_DIR}. "
+                                "Install WinFsp with the developer headers, or set -DWINFSP_DIR=<path>.")
+        endif()
+        target_include_directories(opencryptui-mount PRIVATE
+            "${WINFSP_DIR}/inc" "${WINFSP_DIR}/inc/fuse3")
+        target_link_libraries(opencryptui-mount PRIVATE "${_winfsp_lib}")
+        message(STATUS "FUSE mount driver: ENABLED (WinFsp at ${WINFSP_DIR})")
+    else()
+        # Linux + macOS expose the fuse3 API via pkg-config.
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(FUSE3 REQUIRED IMPORTED_TARGET fuse3)
+        target_link_libraries(opencryptui-mount PRIVATE PkgConfig::FUSE3)
+        # GCC/Clog hardening flags are GNU-style; fine on Linux. Skip on macOS
+        # where some (e.g. -fcf-protection) are not valid on Apple Silicon.
+        if(UNIX AND NOT APPLE)
+            target_compile_options(opencryptui-mount PRIVATE ${ENGINE_HARDENING_CFLAGS} ${ENGINE_HARDENING_FORTIFY})
+            target_link_options(opencryptui-mount PRIVATE ${ENGINE_HARDENING_LFLAGS})
+        endif()
+        message(STATUS "FUSE mount driver: ENABLED (fuse3 ${FUSE3_VERSION})")
+    endif()
+
+    # Real end-to-end mount test (POSIX shell): create → mount → write → read →
+    # verify no plaintext on disk → unmount → remount → wrong-password.
+    # Skips (return code 77) when /dev/fuse is unavailable. Windows has no shell
+    # equivalent here; it is covered by manual testing + the VaultMount test.
+    if(NOT WIN32)
+        add_test(NAME FuseMountE2E
+                 COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuse_mount_e2e.sh $<TARGET_FILE:opencryptui-mount>)
+        set_tests_properties(FuseMountE2E PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 180)
+    endif()
 endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
