@@ -80,9 +80,6 @@ private slots:
     void on_actionAboutKDFs_triggered();
     void on_actionAboutIterations_triggered();
     void on_actionSecurityGuide_triggered();
-    // Vault create/open dialogs (reached from the Vault tab and Easy "Vault").
-    void createVault();
-    void openVault();
     void on_m_cryptoProviderComboBox_currentIndexChanged(const QString &providerName);
     void showProviderCapabilities();
     void updateBenchmarkTable(int iterations, double mbps, double ms, const QString &algorithm, const QString &kdf);
@@ -128,6 +125,19 @@ private:
     void buildEasyHome();
     void applyUiMode(bool advanced);
 
+    // Vault UI (defined in mainwindow_container.cpp). buildVaultTab() builds the
+    // full inline Create/Open form shown in Advanced mode. makeSizeRow() builds a
+    // friendly value+unit+presets capacity picker reused by the tab and Easy
+    // mode; sizeRowToMiB() reads its resolved size. createVaultWithProgress()
+    // wraps the (slow) random-fill create in a modal progress bar.
+    QWidget* buildVaultTab();
+    QWidget* makeSizeRow(QWidget* parent, class QDoubleSpinBox** outVal, class QComboBox** outUnit);
+    static qint64 sizeRowToMiB(const class QDoubleSpinBox* val, const class QComboBox* unit);
+    bool createVaultWithProgress(const QString& path, qint64 sizeMiB,
+                                 const QString& outerFile, const QString& outerPw,
+                                 const QString& hiddenFile, const QString& hiddenPw,
+                                 QString* err);
+
 private slots:
     // Easy-home actions: populate the existing tab widgets with secure defaults
     // and trigger the existing (tested) encrypt/decrypt slots.
@@ -150,6 +160,8 @@ private:
     class QLineEdit *m_easyPath = nullptr;
     class QLineEdit *m_easyPassword = nullptr;
     class QLineEdit *m_easyConfirm = nullptr;
+    class QDoubleSpinBox *m_easySizeVal = nullptr;  // Easy-mode vault size value
+    class QComboBox      *m_easySizeUnit = nullptr; // Easy-mode vault size unit
     class QAction   *m_advancedModeAction = nullptr;
 
     static QTextStream *s_logStream;

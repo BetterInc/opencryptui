@@ -80,7 +80,7 @@ void MainWindow::buildEasyHome()
     }
     root->addLayout(seg);
 
-    // Path row (File only; Vault and Disk drive their own dialogs/tabs).
+    // Path row (used by File and Vault; Disk drives its own tab).
     QHBoxLayout* pathRow = new QHBoxLayout();
     QLabel* pathLabel = new QLabel("File:", m_easyHome);
     pathLabel->setObjectName("easyPathLabel");
@@ -92,9 +92,21 @@ void MainWindow::buildEasyHome()
     pathRow->addWidget(pathLabel); pathRow->addWidget(m_easyPath); pathRow->addWidget(browse);
     root->addLayout(pathRow);
     connect(browse, &QPushButton::clicked, this, [this]{
-        QString p = QFileDialog::getOpenFileName(this, "Choose a file");
+        // For a vault the path is where to *save* the new file; for a plain file
+        // it is the existing file to protect.
+        QString p = (m_easyKind == "Vault")
+            ? QFileDialog::getSaveFileName(this, "Save vault as")
+            : QFileDialog::getOpenFileName(this, "Choose a file");
         if (!p.isEmpty()) m_easyPath->setText(p);
     });
+
+    // Vault size picker (Easy mode shows it only for the Vault kind).
+    QLabel* sizeLabel = new QLabel("Vault size:", m_easyHome);
+    sizeLabel->setObjectName("easySizeLabel");
+    QWidget* sizeRow = makeSizeRow(m_easyHome, &m_easySizeVal, &m_easySizeUnit);
+    sizeRow->setObjectName("easySizeRow");
+    root->addWidget(sizeLabel);
+    root->addWidget(sizeRow);
 
     // Password + confirm.
     m_easyPassword = new QLineEdit(m_easyHome); m_easyPassword->setEchoMode(QLineEdit::Password);
@@ -199,30 +211,9 @@ void MainWindow::buildEasyHome()
     if (ui->diskEncryptButton) ui->diskEncryptButton->setStyleSheet(kAccentButtonQss);
     if (ui->fileEncryptButton) ui->fileEncryptButton->setStyleSheet(kAccentButtonQss);
 
-    // ---- Vault tab in Advanced mode (first-class, not just a menu item) -----
+    // ---- Vault tab in Advanced mode: full inline Create/Open form ----------
     {
-        QWidget* vaultTab = new QWidget(ui->tabWidget);
-        QVBoxLayout* v = new QVBoxLayout(vaultTab);
-        v->setContentsMargins(16, 16, 16, 16); v->setSpacing(12);
-        QLabel* vh = new QLabel("Encrypted Vaults", vaultTab);
-        QFont vf = vh->font(); vf.setBold(true); vf.setPointSize(vf.pointSize() + 2); vh->setFont(vf);
-        QLabel* vd = new QLabel(
-            "A vault is a single encrypted container file you can keep anywhere, "
-            "including on a USB stick. It can hold a hidden second volume for "
-            "deniability, and its password can be split into key shares. Unlike a "
-            "plain encrypted file, a vault is fixed-size and can be mounted as a "
-            "drive.", vaultTab);
-        vd->setWordWrap(true);
-        vd->setStyleSheet("color:#888;");
-        QPushButton* createV = new QPushButton("Create Vault...", vaultTab);
-        QPushButton* openV   = new QPushButton("Open Vault...", vaultTab);
-        createV->setMinimumHeight(40); openV->setMinimumHeight(40);
-        createV->setStyleSheet(kAccentButtonQss);
-        connect(createV, &QPushButton::clicked, this, &MainWindow::createVault);
-        connect(openV,   &QPushButton::clicked, this, &MainWindow::openVault);
-        v->addWidget(vh); v->addWidget(vd); v->addSpacing(8);
-        v->addWidget(createV); v->addWidget(openV); v->addStretch(1);
-
+        QWidget* vaultTab = buildVaultTab();
         const int benchIdx = ui->tabWidget->indexOf(ui->benchmarkTab);
         if (benchIdx >= 0) ui->tabWidget->insertTab(benchIdx, vaultTab, "Vault");
         else               ui->tabWidget->addTab(vaultTab, "Vault");
@@ -253,28 +244,39 @@ void MainWindow::applyUiMode(bool advanced)
 
     // (The crypto-provider row is removed entirely in buildEasyHome.)
 
-    // Easy-home path/password widgets apply only to the File kind; Vault and
-    // Disk drive their own dialogs/tabs.
-    const bool inlineFields = !advanced && m_easyKind == "File";
+    // Easy-home path/password fields are shown for File and Vault; the size
+    // picker only for Vault. Disk just hands off to the Advanced disk tab.
+    const bool isVault       = m_easyKind == "Vault";
+    const bool inlineFields  = !advanced && (m_easyKind == "File" || isVault);
+    const bool showSize      = !advanced && isVault;
     if (m_easyHome) {
         if (auto* pl = m_easyHome->findChild<QLabel*>("easyPathLabel")) {
             pl->setVisible(inlineFields);
+            pl->setText(isVault ? "Save vault as:" : "File:");
         }
-        if (m_easyPath)     m_easyPath->setVisible(inlineFields);
+        if (m_easyPath) {
+            m_easyPath->setVisible(inlineFields);
+            m_easyPath->setPlaceholderText(isVault ? "Where to save the new vault"
+                                                   : "Choose a file to protect");
+        }
         if (auto* b = m_easyHome->findChild<QPushButton*>("easyBrowse")) b->setVisible(inlineFields);
+        if (auto* sl = m_easyHome->findChild<QLabel*>("easySizeLabel")) sl->setVisible(showSize);
+        if (auto* sr = m_easyHome->findChild<QWidget*>("easySizeRow"))   sr->setVisible(showSize);
         if (m_easyPassword) m_easyPassword->setVisible(inlineFields);
         if (m_easyConfirm)  m_easyConfirm->setVisible(inlineFields);
         if (auto* enc = m_easyHome->findChild<QPushButton*>("easyEncryptButton"))
-            enc->setText(m_easyKind == "Vault" ? "Create Vault..."
-                       : m_easyKind == "Disk"  ? "Open Disk Tools" : "Encrypt");
-        if (auto* dec = m_easyHome->findChild<QPushButton*>("easyDecryptButton"))
-            dec->setVisible(m_easyKind != "Disk"),
-            dec->setText(m_easyKind == "Vault" ? "Open Vault..." : "Decrypt");
+            enc->setText(isVault ? "Create vault"
+                       : m_easyKind == "Disk" ? "Open Disk Tools" : "Encrypt");
+        if (auto* dec = m_easyHome->findChild<QPushButton*>("easyDecryptButton")) {
+            dec->setVisible(m_easyKind != "Disk");
+            dec->setText(isVault ? "Open a vault" : "Decrypt");
+        }
         if (auto* note = m_easyHome->findChild<QLabel*>("easyNote")) {
-            if (m_easyKind == "Vault")
-                note->setText("A vault is an encrypted container that can hold a "
-                              "hidden second volume for deniability. Create one, or "
-                              "open an existing vault.");
+            if (isVault)
+                note->setText("A vault is a single encrypted file that can hold a "
+                              "hidden second volume for deniability. Pick a size and "
+                              "password to create one, or open an existing vault. "
+                              "Switch to Advanced mode for decoy files and key shares.");
             else if (m_easyKind == "Disk")
                 note->setText("Whole-disk and USB encryption are advanced and can "
                               "erase data. This opens the Advanced disk tools.");
@@ -301,7 +303,22 @@ void MainWindow::applyUiMode(bool advanced)
 
 void MainWindow::onEasyEncrypt()
 {
-    if (m_easyKind == "Vault") { createVault(); return; }
+    if (m_easyKind == "Vault") {
+        // Easy vault = save location + size + password. The full options
+        // (decoy file, hidden volume, key shares) live in the Advanced tab.
+        if (m_easyPath->text().isEmpty()) { QMessageBox::warning(this, "Save vault", "Choose where to save the vault."); return; }
+        if (m_easyPassword->text().isEmpty()) { QMessageBox::warning(this, "Password", "Please enter a password."); return; }
+        if (m_easyPassword->text() != m_easyConfirm->text()) { QMessageBox::warning(this, "Password", "The two passwords do not match."); return; }
+        QString err;
+        const bool ok = createVaultWithProgress(m_easyPath->text(),
+                                                sizeRowToMiB(m_easySizeVal, m_easySizeUnit),
+                                                QString(), m_easyPassword->text(),
+                                                QString(), QString(), &err);
+        if (!ok) { QMessageBox::critical(this, "Create failed", err); return; }
+        QMessageBox::information(this, "Vault created",
+            "Vault created. Open it with your password to read or add files.");
+        return;
+    }
     if (m_easyKind == "Disk")  { applyUiMode(true); savePreferences();
         if (ui->tabWidget) ui->tabWidget->setCurrentIndex(0); return; }
 
@@ -320,7 +337,20 @@ void MainWindow::onEasyEncrypt()
 
 void MainWindow::onEasyDecrypt()
 {
-    if (m_easyKind == "Vault") { openVault(); return; }
+    if (m_easyKind == "Vault") {
+        // Open: pick the vault, use the typed password, pick where to extract.
+        const QString vault = QFileDialog::getOpenFileName(this, "Open vault");
+        if (vault.isEmpty()) return;
+        if (m_easyPassword->text().isEmpty()) { QMessageBox::warning(this, "Password", "Please enter your password."); return; }
+        const QString dest = QFileDialog::getSaveFileName(this, "Extract vault contents to");
+        if (dest.isEmpty()) return;
+        QString err;
+        const int kind = openContainerToFile(vault, m_easyPassword->text(), dest, "Argon2", 3, &err);
+        if (kind == 0) { QMessageBox::critical(this, "Open failed", err); return; }
+        QMessageBox::information(this, "Vault opened",
+            QString("%1 volume extracted to:\n%2").arg(kind == 2 ? "Hidden" : "Outer").arg(dest));
+        return;
+    }
     if (m_easyKind == "Disk")  return; // no decrypt button shown for Disk
 
     if (m_easyPath->text().isEmpty()) { QMessageBox::warning(this, "Choose a file", "Please choose the encrypted file first."); return; }
