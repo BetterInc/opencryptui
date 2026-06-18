@@ -1,3 +1,36 @@
+/* Base: give EVERY widget the dark palette so no popup, dialog or sub-control
+   falls back to the default light/black palette (which renders black-on-black
+   and is unreadable). More specific rules below refine individual widgets. */
+QWidget {
+    background-color: #2d2d2d;
+    color: #d3d3d3;
+}
+
+/* Popups and dialogs must be covered explicitly - message boxes, the About /
+   help dialogs, input dialogs and their text areas - or they show unreadable
+   black text. */
+QDialog, QMessageBox, QInputDialog {
+    background-color: #2d2d2d;
+    color: #d3d3d3;
+}
+
+QMessageBox QLabel, QInputDialog QLabel {
+    color: #d3d3d3;
+    background-color: transparent;
+}
+
+QTextEdit, QTextBrowser, QPlainTextEdit {
+    background-color: #232323;
+    color: #d3d3d3;
+    border: 1px solid #555555;
+}
+
+QToolTip {
+    background-color: #3a3a3a;
+    color: #d3d3d3;
+    border: 1px solid #555555;
+}
+
 /* Main window background */
 QMainWindow {
     background-color: #2d2d2d;
