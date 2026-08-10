@@ -156,29 +156,51 @@ int main(int argc, char** argv)
         const qint64 devSize = 4 * 1024 * 1024;
         { QFile f(devPath); f.open(QIODevice::WriteOnly); f.resize(devSize); f.close(); }
 
-#if defined(Q_OS_LINUX)
-        // A plain file is not in /proc/mounts -> not blocked.
+        // A plain unmounted file is safe to format on every OS.
         check(BlockVolume::deviceEraseBlocker(devPath).isEmpty(), "unmounted file not blocked");
-#else
-        // Non-Linux: raw whole-device encryption is unsupported, so the
-        // blocker refuses everything (defense-in-depth, no silent fallback).
-        check(!BlockVolume::deviceEraseBlocker(devPath).isEmpty(),
-              "non-Linux: device erase always blocked (unsupported)");
-#endif
 
         QString ferr;
         bool fok = BlockVolume::formatDeviceWhole(eng, devPath, "fmt-pw", kdf, iters, &ferr);
-#if defined(Q_OS_LINUX)
-        check(fok, ("formatDeviceWhole (Linux)" + (fok?QString():": "+ferr)).toUtf8().constData());
+        check(fok, ("formatDeviceWhole" + (fok?QString():": "+ferr)).toUtf8().constData());
         auto fh = BlockVolume::open(eng, devPath, "fmt-pw", kdf, iters);
         check(fh.ok, "formatted-whole device opens");
         check(BlockVolume::readBlock(fh, 0) == QByteArray(BS, 0), "formatted-whole reads zeros");
         BlockVolume::close(fh);
-#else
-        // Non-Linux: must refuse with a clear message, not do anything unsafe.
-        check(!fok, "formatDeviceWhole refused on non-Linux");
-        check(ferr.contains("container"), "non-Linux error points to container-file model");
-#endif
+    }
+
+    // ---- OPTIONAL: the same flow against a REAL raw device -----------------
+    // CI (and developers) can point OCUI_TEST_RAW_DEVICE at a disposable
+    // device - a loop device, an hdiutil-attached image (/dev/diskN), or an
+    // attached VHD (\\.\PhysicalDriveN). EVERYTHING ON IT IS DESTROYED.
+    {
+        const QByteArray devEnv = qgetenv("OCUI_TEST_RAW_DEVICE");
+        if (!devEnv.isEmpty()) {
+            const QString dev = QString::fromLocal8Bit(devEnv);
+            std::fprintf(stderr, "-- raw-device e2e on %s --\n", dev.toUtf8().constData());
+            const qint64 devSize = BlockVolume::deviceSizeBytes(dev);
+            check(devSize > 0, "raw device: kernel-reported size");
+            const QString blocker = BlockVolume::deviceEraseBlocker(dev);
+            if (!blocker.isEmpty())
+                std::fprintf(stderr, "   blocker: %s\n", blocker.toUtf8().constData());
+            check(blocker.isEmpty(), "raw device: not mounted/in use");
+
+            QString derr;
+            bool dok = BlockVolume::formatDeviceWhole(eng, dev, "dev-pw", kdf, iters, &derr);
+            check(dok, ("raw device: formatDeviceWhole" + (dok?QString():": "+derr)).toUtf8().constData());
+
+            auto dh = BlockVolume::open(eng, dev, "dev-pw", kdf, iters);
+            check(dh.ok, "raw device: volume opens");
+            check(BlockVolume::readBlock(dh, 0) == QByteArray(BS, 0), "raw device: fresh block zeroed");
+            QByteArray payload = rngData(BS, 0x5A);
+            check(BlockVolume::writeBlock(dh, 2, payload), "raw device: write block");
+            check(BlockVolume::readBlock(dh, 2) == payload, "raw device: block round-trips");
+            BlockVolume::close(dh);
+
+            auto bad = BlockVolume::open(eng, dev, "wrong-pw", kdf, iters);
+            check(!bad.ok, "raw device: wrong password rejected");
+        } else {
+            std::fprintf(stderr, "note: OCUI_TEST_RAW_DEVICE not set - raw-device e2e skipped\n");
+        }
     }
 
     if (s_failures) { std::fprintf(stderr, "TOTAL FAILURES: %d\n", s_failures); return 1; }

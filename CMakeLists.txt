@@ -199,6 +199,7 @@ set(LIBRARY_SOURCES
     src/deniable_container.cpp
     include/deniable_container.h
     src/block_volume.cpp
+    src/block_device_io.cpp
     include/block_volume.h
     src/vault_mount.cpp
     include/vault_mount.h

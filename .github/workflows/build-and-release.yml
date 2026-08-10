@@ -353,6 +353,21 @@ jobs:
           ctest --output-on-failure --timeout 600 -E '^OpenCryptUITest$' \
             2>&1 | tee -a Testing/Temporary/LastTest.log
 
+      - name: Raw-device e2e (Linux, loop device)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd build
+          # Real whole-device format/open/read/write against a loop device -
+          # proves the raw /dev path end to end, not just file-as-device.
+          truncate -s 16M /tmp/ocui_rawdev.img
+          DEV=$(sudo losetup --find --show /tmp/ocui_rawdev.img)
+          echo "loop device: $DEV"
+          sudo chmod 666 "$DEV"
+          OCUI_TEST_RAW_DEVICE="$DEV" QT_QPA_PLATFORM=offscreen ./TestBlockVolume
+          sudo losetup -d "$DEV"
+
       - name: Run tests (macOS)
         if: matrix.os == 'macos-latest'
         shell: bash
@@ -368,6 +383,33 @@ jobs:
           chmod +x run_tests_mac.sh
           echo "Running tests with filtered output..."
           ./run_tests_mac.sh -v2 | tee Testing/Temporary/LastTest.log
+
+      - name: Run engine tests (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          set -o pipefail
+          cd build
+          # Full engine suite - parity with the Linux and Windows jobs (the UI
+          # monolith already ran above). Without this, engine regressions that
+          # only bite on macOS go unnoticed.
+          QT_QPA_PLATFORM=offscreen \
+          ctest --output-on-failure --timeout 600 -E '^OpenCryptUITest$' \
+            2>&1 | tee -a Testing/Temporary/LastTest.log
+
+      - name: Raw-device e2e (macOS, hdiutil device)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd build
+          # Real whole-device format/open/read/write against an hdiutil-attached
+          # disk image (/dev/diskN, no partition map, not mounted).
+          hdiutil create -size 16m -layout NONE -o /tmp/ocui_rawdev.dmg
+          DEV=$(hdiutil attach -nomount /tmp/ocui_rawdev.dmg | head -1 | awk '{print $1}')
+          echo "attached device: $DEV"
+          OCUI_TEST_RAW_DEVICE="$DEV" QT_QPA_PLATFORM=offscreen ./TestBlockVolume
+          hdiutil detach "$DEV"
 
       - name: Run tests (Windows)
         if: matrix.os == 'windows-latest'
@@ -437,6 +479,37 @@ jobs:
             }
           }
           exit $ctestExit
+
+      - name: Raw-device e2e (Windows, VHD)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Set-Location build
+          # Real whole-device format/open/read/write against an attached VHD
+          # (\\.\PhysicalDriveN, RAW, no volumes). Runner shell is admin.
+          $vhd = Join-Path $env:TEMP 'ocui_rawdev.vhd'
+          @"
+          create vdisk file="$vhd" maximum=16 type=fixed
+          select vdisk file="$vhd"
+          attach vdisk
+          "@ | Set-Content dp_create.txt -Encoding ascii
+          diskpart /s dp_create.txt
+          Start-Sleep -Seconds 3
+          $disk = Get-Disk | Where-Object Location -eq $vhd
+          if (-not $disk) { Write-Error "attached VHD not found via Get-Disk"; exit 1 }
+          if ($disk.IsReadOnly) { Set-Disk -Number $disk.Number -IsReadOnly $false }
+          if ($disk.IsOffline)  { Set-Disk -Number $disk.Number -IsOffline  $false }
+          $env:OCUI_TEST_RAW_DEVICE = "\\.\PhysicalDrive$($disk.Number)"
+          Write-Host "raw device: $env:OCUI_TEST_RAW_DEVICE"
+          $env:QT_FORCE_STDERR_LOGGING = "1"
+          .\TestBlockVolume.exe
+          $rc = $LASTEXITCODE
+          @"
+          select vdisk file="$vhd"
+          detach vdisk
+          "@ | Set-Content dp_detach.txt -Encoding ascii
+          diskpart /s dp_detach.txt
+          exit $rc
 
       # Upload test results
       - name: Upload test results

@@ -80,11 +80,13 @@ public:
                               const ProgressFn& progress = {});
 
     // Format an entire device (e.g. a USB stick) as an encrypted volume, with
-    // all the safety checks: refuses on non-Linux (returns a clear "use a
-    // container file" error - Windows/macOS raw-device support is unimplemented),
-    // refuses if the device or any of its partitions is mounted, auto-sizes the
-    // device, then calls createOnDevice. DESTRUCTIVE: the caller must already
-    // have the user's explicit, informed confirmation. blockSize defaults to
+    // all the safety checks: refuses if the device (or any partition/volume on
+    // it) is mounted or in use, refuses the running system disk on Windows,
+    // auto-sizes the device, then calls createOnDevice. On Windows every
+    // volume on the target disk is locked + dismounted for the duration of the
+    // format. Works on Linux (/dev/sdX), macOS (/dev/diskN) and Windows
+    // (\\.\PhysicalDriveN). DESTRUCTIVE: the caller must already have the
+    // user's explicit, informed confirmation. blockSize defaults to
     // DEFAULT_BLOCK_SIZE. A regular sized file is accepted as a stand-in device
     // (used by tests).
     static bool formatDeviceWhole(EncryptionEngine& eng, const QString& devicePath,
@@ -92,14 +94,15 @@ public:
                                   QString* error = nullptr, const ProgressFn& progress = {},
                                   quint32 blockSize = DEFAULT_BLOCK_SIZE);
 
-    // Empty if `path` looks safe to erase; otherwise a human reason (mounted,
-    // unknown size, unsupported OS). Linux-only meaningful; advisory.
+    // Empty if `path` looks safe to erase; otherwise a human reason: mounted
+    // (Linux /proc/mounts, macOS getmntinfo), in use or the system disk
+    // (Windows volume lock probe). Regular files are always safe. Advisory -
+    // formatDeviceWhole re-checks and (on Windows) takes real locks.
     static QString deviceEraseBlocker(const QString& path);
 
     // Size in bytes of a path: real block-device size on Linux (BLKGETSIZE64),
-    // else the regular-file size. Returns -1 on failure. (Windows/macOS device
-    // sizing not yet implemented - returns file size, which is 0 for a raw
-    // device there; callers must supply the size explicitly on those OSes.)
+    // macOS (DKIOCGETBLOCKCOUNT*DKIOCGETBLOCKSIZE) and Windows
+    // (IOCTL_DISK_GET_LENGTH_INFO), else the regular-file size. -1 on failure.
     static qint64 deviceSizeBytes(const QString& path);
 
     // Open an existing volume; the returned Handle carries the data key.
