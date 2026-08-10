@@ -51,46 +51,45 @@ void MainWindow::loadPreferences()
     QString settingsDirPath = QDir::homePath() + "/.opencryptui";
     QString settingsFilePath = settingsDirPath + "/config.json";
 
+    // Defaults for a first run (or unreadable config): Light theme, Easy mode
+    // so first-time / non-expert users get the simple experience. These must be
+    // applied even when no config exists - skipping applyUiMode() would leave
+    // BOTH the Easy home and the Advanced tabs visible (setupUi shows the tabs
+    // by default).
+    QString theme = "Light";
+    QString mode = "Easy";
+
     QDir settingsDir(settingsDirPath);
-    if (!settingsDir.exists())
+    if (!settingsDir.exists() && !settingsDir.mkpath(settingsDirPath))
     {
-        if (!settingsDir.mkpath(settingsDirPath))
-        {
-            SECURE_LOG(ERROR_LEVEL, "MainWindow", QString("Failed to create settings directory: %1").arg(settingsDirPath));
-            applyTheme("Light");
-            return;
-        }
+        SECURE_LOG(ERROR_LEVEL, "MainWindow", QString("Failed to create settings directory: %1").arg(settingsDirPath));
     }
 
     QFile settingsFile(settingsFilePath);
 
     if (!settingsFile.exists())
     {
-        SECURE_LOG(INFO, "MainWindow", "Settings file not found, applying default theme.");
-        applyTheme("Light");
-        return;
+        SECURE_LOG(INFO, "MainWindow", "Settings file not found, applying defaults.");
     }
-
-    if (!settingsFile.open(QIODevice::ReadOnly))
+    else if (!settingsFile.open(QIODevice::ReadOnly))
     {
         SECURE_LOG(ERROR_LEVEL, "MainWindow", QString("Failed to open settings file for reading: %1").arg(settingsFile.errorString()));
-        applyTheme("Light");
-        return;
+    }
+    else
+    {
+        QByteArray settingsData = settingsFile.readAll();
+        QJsonDocument settingsDoc = QJsonDocument::fromJson(settingsData);
+        QJsonObject settingsObj = settingsDoc.object();
+
+        theme = settingsObj.value("theme").toString(theme);
+        // UI mode: "Easy" (simple home) or "Advanced" (full tabs).
+        mode = settingsObj.value("mode").toString(mode);
+
+        settingsFile.close();
     }
 
-    QByteArray settingsData = settingsFile.readAll();
-    QJsonDocument settingsDoc = QJsonDocument::fromJson(settingsData);
-    QJsonObject settingsObj = settingsDoc.object();
-
-    QString theme = settingsObj.value("theme").toString("Light");
     applyTheme(theme);
-
-    // UI mode: "Easy" (simple home) or "Advanced" (full tabs). Default Easy so
-    // first-time / non-expert users get the simple experience.
-    const QString mode = settingsObj.value("mode").toString("Easy");
     applyUiMode(mode == "Advanced");
-
-    settingsFile.close();
 }
 
 void MainWindow::savePreferences()
