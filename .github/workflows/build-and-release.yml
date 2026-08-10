@@ -395,6 +395,11 @@ jobs:
           # indefinitely (we hit a 7 min wall-clock on the previous run).
           $env:QT_LOGGING_RULES    = "*.debug=false"
           $env:QT_MESSAGE_PATTERN  = "[%{type}] %{message}"
+          # Without a console, Qt on Windows routes qDebug/QTest output to
+          # OutputDebugString, so ctest captures nothing and a failing UI
+          # test is invisible. Force it onto stderr so it lands in the log.
+          $env:QT_FORCE_STDERR_LOGGING = "1"
+          $env:QT_LOGGING_TO_CONSOLE   = "1"
           # Keep QT_DEBUG_PLUGINS on so plugin-search issues are visible
           # in the log if any test can't load its platform.
           $env:QT_DEBUG_PLUGINS    = "1"

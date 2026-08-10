@@ -156,8 +156,15 @@ int main(int argc, char** argv)
         const qint64 devSize = 4 * 1024 * 1024;
         { QFile f(devPath); f.open(QIODevice::WriteOnly); f.resize(devSize); f.close(); }
 
+#if defined(Q_OS_LINUX)
         // A plain file is not in /proc/mounts -> not blocked.
         check(BlockVolume::deviceEraseBlocker(devPath).isEmpty(), "unmounted file not blocked");
+#else
+        // Non-Linux: raw whole-device encryption is unsupported, so the
+        // blocker refuses everything (defense-in-depth, no silent fallback).
+        check(!BlockVolume::deviceEraseBlocker(devPath).isEmpty(),
+              "non-Linux: device erase always blocked (unsupported)");
+#endif
 
         QString ferr;
         bool fok = BlockVolume::formatDeviceWhole(eng, devPath, "fmt-pw", kdf, iters, &ferr);
