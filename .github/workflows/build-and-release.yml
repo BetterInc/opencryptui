@@ -490,6 +490,7 @@ jobs:
           # Real whole-device format/open/read/write against an attached VHD
           # (\\.\PhysicalDriveN, RAW, no volumes). Runner shell is admin.
           $vhd = Join-Path $env:TEMP 'ocui_rawdev.vhd'
+          $before = @(Get-Disk | Select-Object -ExpandProperty Number)
           @"
           create vdisk file="$vhd" maximum=16 type=fixed
           select vdisk file="$vhd"
@@ -497,8 +498,11 @@ jobs:
           "@ | Set-Content dp_create.txt -Encoding ascii
           diskpart /s dp_create.txt
           Start-Sleep -Seconds 3
-          $disk = Get-Disk | Where-Object Location -eq $vhd
-          if (-not $disk) { Write-Error "attached VHD not found via Get-Disk"; exit 1 }
+          Get-Disk | Format-Table Number, FriendlyName, BusType, Size, IsOffline, IsReadOnly -AutoSize | Out-String | Write-Host
+          # Identify the attached VHD as the disk number that appeared.
+          $newNums = @(Get-Disk | Select-Object -ExpandProperty Number) | Where-Object { $_ -notin $before }
+          if (-not $newNums) { Write-Error "attached VHD not found via Get-Disk"; exit 1 }
+          $disk = Get-Disk -Number ($newNums | Select-Object -First 1)
           if ($disk.IsReadOnly) { Set-Disk -Number $disk.Number -IsReadOnly $false }
           if ($disk.IsOffline)  { Set-Disk -Number $disk.Number -IsOffline  $false }
           $env:OCUI_TEST_RAW_DEVICE = "\\.\PhysicalDrive$($disk.Number)"
