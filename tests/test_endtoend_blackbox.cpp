@@ -147,7 +147,15 @@ static int tc0_binaryStartupSmoke()
 
     QProcess proc;
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+#if !defined(Q_OS_MACOS)
     env.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+#else
+    // On macOS the deployed .app bundle carries only the cocoa platform
+    // plugin (macdeployqt strips the rest), so forcing offscreen makes Qt
+    // abort at startup. The mac CI runners have a window server, so let the
+    // default platform load instead.
+    env.remove(QStringLiteral("QT_QPA_PLATFORM"));
+#endif
     // Suppress Qt's own logging noise on stderr.
     env.insert(QStringLiteral("QT_LOGGING_RULES"), QStringLiteral("*.debug=false;*.info=false;*.warning=false"));
     proc.setProcessEnvironment(env);

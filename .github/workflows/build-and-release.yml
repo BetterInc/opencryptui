@@ -467,7 +467,9 @@ jobs:
           if ($ctestExit -ne 0) {
             $lastRun = "Testing\Temporary\LastTest.log"
             if (Test-Path $lastRun) {
-              $failingLines = Select-String -Path $lastRun -Pattern '\bFailed\b' -AllMatches
+              # -CaseSensitive: ctest's summary line "The following tests
+              # FAILED:" must not match, or uiOnly is always false.
+              $failingLines = Select-String -CaseSensitive -Path $lastRun -Pattern '\bFailed\b' -AllMatches
               $uiOnly = $true
               foreach ($m in $failingLines) {
                 if ($m.Line -notmatch 'OpenCryptUITest') { $uiOnly = $false }

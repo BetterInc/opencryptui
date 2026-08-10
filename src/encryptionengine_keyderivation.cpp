@@ -667,31 +667,32 @@ double EncryptionEngine::testRuns(const QByteArray& data)
 double EncryptionEngine::testSerialCorrelation(const QByteArray& data)
 {
     if (data.size() < 2) return 0.0;
-    
-    long sum = 0;
-    long squared_sum = 0;
-    long product_sum = 0;
-    
+
+    // qint64 throughout: `long` is 32-bit on Windows (LLP64), and sum*sum for
+    // a 2 KB sample is ~7e10 - overflowing it made this return garbage there.
+    qint64 sum = 0;
+    qint64 squared_sum = 0;
+    qint64 product_sum = 0;
+
     for (int i = 0; i < data.size() - 1; i++) {
         unsigned char b1 = static_cast<unsigned char>(data[i]);
         unsigned char b2 = static_cast<unsigned char>(data[i + 1]);
-        
+
         sum += b1;
-        squared_sum += b1 * b1;
-        product_sum += b1 * b2;
+        squared_sum += qint64(b1) * b1;
+        product_sum += qint64(b1) * b2;
     }
-    
+
     // Add last byte to sums
-    sum += static_cast<unsigned char>(data[data.size() - 1]);
-    squared_sum += static_cast<unsigned char>(data[data.size() - 1]) * 
-                   static_cast<unsigned char>(data[data.size() - 1]);
-    
-    long n = data.size();
-    double numerator = (n - 1) * product_sum - sum * sum + 
-                      static_cast<unsigned char>(data[data.size() - 1]) * 
-                      static_cast<unsigned char>(data[0]);
-    double denominator = (n * squared_sum - sum * sum);
-    
+    const qint64 lastByte  = static_cast<unsigned char>(data[data.size() - 1]);
+    const qint64 firstByte = static_cast<unsigned char>(data[0]);
+    sum += lastByte;
+    squared_sum += lastByte * lastByte;
+
+    const qint64 n = data.size();
+    const double numerator   = double((n - 1) * product_sum - sum * sum + lastByte * firstByte);
+    const double denominator = double(n * squared_sum - sum * sum);
+
     if (denominator == 0) return 0.0;
     return numerator / denominator;
 }
