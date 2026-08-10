@@ -1102,19 +1102,8 @@
                 </property>
                 <addaction name="actionPreferences"/>
             </widget>
-            <widget class="QMenu" name="menuHelp">
-                <property name="title">
-                    <string>Help</string>
-                </property>
-                <addaction name="actionAbout"/>
-                <addaction name="actionAboutCiphers"/>
-                <addaction name="actionAboutKDFs"/>
-                <addaction name="actionAboutIterations"/>
-                <addaction name="actionSecurityGuide"/>
-            </widget>
             <addaction name="menuFile"/>
             <addaction name="menuEdit"/>
-            <addaction name="menuHelp"/>
         </widget>
         <action name="actionAboutIterations">
             <property name="text">

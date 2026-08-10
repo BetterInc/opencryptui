@@ -375,20 +375,32 @@ QByteArray EncryptionEngine::generateSecureRandomBytes(int size, bool isSecurity
         return QByteArray();
     }
     
-    // Enhanced entropy testing for security-critical data
+    // Enhanced entropy testing: this statistical self-test guards against a
+    // catastrophically broken RNG. It is NOT a per-draw acceptance gate: on
+    // small samples the frequency/runs/serial statistics are far too noisy to
+    // use as pass/fail, so a healthy CSPRNG draw fails them by chance (~10% at
+    // 32 bytes). Rejecting there made this function return an empty QByteArray,
+    // which silently produced empty salts/IVs for key-sized requests. The bytes
+    // here already come from OpenSSL + libsodium + /dev/urandom and (for
+    // security-critical requests) are SHA-512 whitened below, so for small
+    // samples we record metrics but never reject. The pass/fail gate only
+    // applies to samples large enough for the statistics to be meaningful.
     EntropyTestResult entropyResult = testEntropyQuality(randomData);
-    
-    if (isSecurityCritical && !entropyResult.passed) {
+
+    // Minimum sample size at which a failed entropy self-test is treated as a
+    // hard failure. Below this the test is dominated by sampling noise.
+    static const int kEntropyGateMinBytes = 1024;
+    if (isSecurityCritical && size >= kEntropyGateMinBytes && !entropyResult.passed) {
         SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", QString("Random data failed entropy test (%1): %2")
                             .arg(entropyResult.testName)
                             .arg(entropyResult.details));
-        
+
         sodium_memzero(randomData.data(), randomData.size());
         sodium_memzero(mixBuffer.data(), mixBuffer.size());
         sodium_memzero(hardwareBuffer.data(), hardwareBuffer.size());
         return QByteArray();
     }
-    
+
     // Update global entropy health metrics
     updateEntropyHealthMetrics(entropyResult);
 

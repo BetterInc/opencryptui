@@ -32,6 +32,20 @@ int main(int argc, char *argv[])
     // This is a test log message to verify logging configuration
     SECURE_LOG(INFO, "MainApplication", "Application starting - this should only appear in test mode");
 
+#ifdef Q_OS_LINUX
+    // Qt 5's native Wayland backend renders top-level popups (the About /
+    // Preferences message boxes) with a transparent, unpainted background on
+    // some GPU/EGL paths - you see the desktop through the dialog. XWayland
+    // (the xcb platform) is unaffected. When we're on a Wayland session and the
+    // user hasn't explicitly pinned a platform, prefer xcb so popups are always
+    // opaque. Must be set before QApplication is constructed.
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM") &&
+        !qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY"))
+    {
+        qputenv("QT_QPA_PLATFORM", "xcb");
+    }
+#endif
+
     QApplication app(argc, argv);
 
     Q_INIT_RESOURCE(resources);

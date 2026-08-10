@@ -330,35 +330,17 @@ QString TestOpenCryptUI::createVirtualDisk(qint64 sizeInBytes)
 
 // [moved to tests/test_ui_*.cpp - see test_encryption_app.h for declarations]
 
-void TestOpenCryptUI::testAllCiphersAndKDFs()
-{
-    // Cipher-matrix coverage now lives in tests/test_engine_cipher_matrix.cpp
-    // (CTest: EngineCipherMatrix). That runs every supportedCiphers() entry
-    // through a real encrypt->decrypt round-trip at the engine API - no UI
-    // widget dance, no headless flake. Skip the UI variant and rely on the
-    // engine-level test as the source of truth.
-    QSKIP("Covered by EngineCipherMatrix (engine-level, faster + deterministic)");
-}
+// testAllCiphersAndKDFs removed: every supportedCiphers() entry is exercised
+// through a real encrypt->decrypt round-trip at the engine API in
+// tests/test_engine_cipher_matrix.cpp (CTest: EngineCipherMatrix), which is
+// faster and deterministic. The UI variant only ever QSKIP'd.
 
 void TestOpenCryptUI::testSecureDiskWiping()
 {
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Starting secure disk wiping test");
 
-    // Switch to the disk encryption tab
-    switchToTab("Disk");
-
-    // Get UI elements
-    QLineEdit *filePathInput = mainWindow->findChild<QLineEdit *>("diskPathLineEdit");
-    QPushButton *wipeButton = mainWindow->findChild<QPushButton *>("diskSecureWipeButton");
-    QComboBox *wipeMethodComboBox = mainWindow->findChild<QComboBox *>("diskWipeMethodComboBox");
-
-    // The current UI exposes secure wiping as a checkbox flow on the disk tab
-    // (diskSecureWipeCheckBox + wipePatternComboBox/wipePassesSpinBox), not a
-    // standalone wipe button/combo. Until the UI gains a dedicated wipe flow,
-    // skip this UI-driven test rather than reporting a false failure.
-    if (!(filePathInput && wipeButton && wipeMethodComboBox)) {
-        QSKIP("Dedicated secure-wipe UI not present in current mainwindow.ui");
-    }
+    // This test verifies the engine's secureWipeDisk() directly. It does not
+    // drive any wipe UI widgets, so there is nothing to skip - it always runs.
 
     // --- Test Setup ---
     // Create a dummy file with non-zero content
@@ -385,9 +367,6 @@ void TestOpenCryptUI::testSecureDiskWiping()
     SECURE_LOG(DEBUG, "TestOpenCryptUI", QString("Created dummy disk for wiping: %1 (%2 bytes)").arg(diskPath).arg(diskSize));
 
     // --- Perform Wipe Operation ---
-    filePathInput->setText(diskPath);
-    QTest::qWait(WAIT_TIME_SHORT);
-
     // Select a simple wipe method (e.g., 1 pass zeros) for testing the mechanism
     // Using 1 pass with verification enabled triggers the final zero pass.
     int passes = 1;
@@ -544,31 +523,17 @@ bool compareDirectories(const QString &path1, const QString &path2) {
     return true; // Directories are identical
 }
 
-void TestOpenCryptUI::testVirtualDiskEncryption()
-{
-    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Starting virtual disk encryption test with real progress tracking");
-
-    // Same reason as testHiddenVolumeEncryption: the virtual-disk UI flow
-    // runs on a worker thread and polls for an output file. Even with a
-    // 128 KB image, the headless (offscreen) event loop doesn't make steady
-    // progress and the test eats 40+ seconds per run before its internal
-    // fallback SKIPs it. Skip up front so the suite stays fast.
-    // Engine-level disk logic should be covered by a dedicated non-UI test.
-    QSKIP("Virtual-disk UI flow is not exercised in headless CI");
-}
+// testVirtualDiskEncryption removed: the virtual-disk UI flow never made steady
+// progress under headless CI and only ever QSKIP'd. Block-volume encrypt/decrypt
+// is covered at the engine level by tests/test_block_volume.cpp (CTest:
+// BlockVolume).
 
 // [moved to tests/test_ui_*.cpp - see test_encryption_app.h for declarations]
 
-void TestOpenCryptUI::testEncryptDecryptWithKeyfile()
-{
-    // Engine-level keyfile coverage now lives in tests/test_engine_keyfile.cpp
-    // (CTest: EngineKeyfile). That test exercises password + keyfile round-trip,
-    // wrong-keyfile rejection, and missing-keyfile rejection without the
-    // UI - it's fast and deterministic. The UI-driven version below flakes
-    // under headless (worker signals don't progress), so skip it here and
-    // keep the engine-level coverage as the source of truth.
-    QSKIP("Keyfile flow covered by EngineKeyfile; UI variant is unreliable headless");
-}
+// testEncryptDecryptWithKeyfile removed: password + keyfile round-trip,
+// wrong-keyfile rejection, and missing-keyfile rejection are covered at the
+// engine level by tests/test_engine_keyfile.cpp (CTest: EngineKeyfile). The
+// UI variant flaked under headless and only ever QSKIP'd.
 
 // [moved to tests/test_ui_*.cpp - see test_encryption_app.h for declarations]
 
@@ -578,16 +543,11 @@ void TestOpenCryptUI::testEntropyQuality()
 {
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Starting entropy quality test");
 
-    // Get the entropy test button from any tab
-    QPushButton *testEntropyButton = mainWindow->findChild<QPushButton *>("fileTestEntropyButton");
-    if (!testEntropyButton) {
-        QSKIP("fileTestEntropyButton not present in current mainwindow.ui");
-    }
-
-    // Perform entropy test
-    QTest::mouseClick(testEntropyButton, Qt::LeftButton);
-    QTest::qWait(WAIT_TIME_LONG * 2); // Give more time for entropy test
-    QApplication::processEvents();
+    // Drive the entropy test through the engine directly. performEntropyTest()
+    // runs the quality checks and populates the health-score/bit-distribution
+    // metrics, so this exercises the same path the UI button would trigger -
+    // without depending on a UI widget that may not be present.
+    mainWindow->getEncryptionEngine().performEntropyTest(2048);
 
     // Verify entropy results
     int entropyScore = mainWindow->getEncryptionEngine().getEntropyHealthScore();
@@ -627,14 +587,10 @@ void TestOpenCryptUI::testEntropyQuality()
     SECURE_LOG(DEBUG, "TestOpenCryptUI", "Entropy quality test completed");
 }
 
-void TestOpenCryptUI::testKeyDerivation()
-{
-    // Key-derivation coverage (determinism, salt independence, PBKDF2 floor,
-    // KDF separation) now lives in tests/test_engine_kdf.cpp (CTest:
-    // EngineKdf). The engine-level test is faster and doesn't drag in
-    // UI bootstrapping.
-    QSKIP("Covered by EngineKdf (engine-level, faster + deterministic)");
-}
+// testKeyDerivation removed: determinism, salt independence, the PBKDF2 floor,
+// and KDF separation are covered at the engine level by
+// tests/test_engine_kdf.cpp (CTest: EngineKdf). The UI variant only ever
+// QSKIP'd.
 
 void TestOpenCryptUI::cleanup()
 {
@@ -689,22 +645,10 @@ void TestOpenCryptUI::cleanup()
     QApplication::processEvents();
 }
 
-// ***** INSERTED MISSING FUNCTION START *****
-
-void TestOpenCryptUI::testHiddenVolumeEncryption()
-{
-    SECURE_LOG(DEBUG, "TestOpenCryptUI", "Starting hidden volume encryption test");
-
-    // This test drives the full hidden-volume encryption flow through the UI,
-    // which relies on worker threads and disk I/O that do not complete in a
-    // reasonable time under headless (QT_QPA_PLATFORM=offscreen / xvfb) CI.
-    // The matching testVirtualDiskEncryption already QSKIPs on timeout; skip
-    // this one up front rather than burning 20+ seconds polling for a file
-    // that will never appear.
-    QSKIP("Hidden volume UI flow is not exercised in headless CI");
-}
-
-// ***** INSERTED MISSING FUNCTION END *****
+// testHiddenVolumeEncryption removed: hidden-volume create/open, outer-vs-hidden
+// password separation, and forensic indistinguishability are covered at the
+// engine level by tests/test_deniable_container.cpp (CTest: DeniableContainer).
+// The UI flow never completed under headless CI and only ever QSKIP'd.
 
 // Restore the original closeMessageBoxes function
 void TestOpenCryptUI::closeMessageBoxes()

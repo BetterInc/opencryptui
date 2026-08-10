@@ -184,8 +184,12 @@ void MainWindow::buildEasyHome()
     helpBtn->setObjectName("helpButton");
     QMenu* helpMenu = new QMenu(helpBtn);
     // (Vault create/open live in the Vault tab now, not here.)
-    helpMenu->addAction("Security Guide",  this, &MainWindow::on_actionSecurityGuide_triggered);
-    helpMenu->addAction("About",           this, &MainWindow::on_actionAbout_triggered);
+    // This is the single Help entry; the old menu-bar Help menu was removed.
+    helpMenu->addAction("About",            this, &MainWindow::on_actionAbout_triggered);
+    helpMenu->addAction("About Ciphers",    this, &MainWindow::on_actionAboutCiphers_triggered);
+    helpMenu->addAction("About KDFs",       this, &MainWindow::on_actionAboutKDFs_triggered);
+    helpMenu->addAction("About Iterations", this, &MainWindow::on_actionAboutIterations_triggered);
+    helpMenu->addAction("Security Guide",   this, &MainWindow::on_actionSecurityGuide_triggered);
     helpBtn->setMenu(helpMenu);
     hb->addSpacing(12);
     hb->addWidget(helpBtn);

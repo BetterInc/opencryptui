@@ -8,6 +8,8 @@
 #include <QFile>
 #include <QSettings>
 #include <QTextStream>
+#include <QPalette>
+#include <QColor>
 #include "logging/secure_logger.h"
 
 void MainWindow::applyTheme(const QString &theme)
@@ -37,6 +39,41 @@ void MainWindow::applyTheme(const QString &theme)
         QString styleSheet = QLatin1String(file.readAll());
         qApp->setStyleSheet(styleSheet);
         file.close();
+
+        // Drive an opaque application palette as well. A stylesheet-only
+        // background can leave top-level dialog/popup surfaces (About,
+        // Preferences, message boxes) unpainted on some Wayland/EGL backends -
+        // the window renders transparent and you see the desktop through it.
+        // An explicit palette guarantees an opaque window fill on every backend;
+        // styled widgets keep their look because stylesheet rules win over the
+        // palette.
+        QPalette pal = qApp->palette();
+        if (theme == "Dark")
+        {
+            pal.setColor(QPalette::Window, QColor(0x2d, 0x2d, 0x2d));
+            pal.setColor(QPalette::WindowText, QColor(0xd3, 0xd3, 0xd3));
+            pal.setColor(QPalette::Base, QColor(0x23, 0x23, 0x23));
+            pal.setColor(QPalette::AlternateBase, QColor(0x2d, 0x2d, 0x2d));
+            pal.setColor(QPalette::Text, QColor(0xd3, 0xd3, 0xd3));
+            pal.setColor(QPalette::Button, QColor(0x2d, 0x2d, 0x2d));
+            pal.setColor(QPalette::ButtonText, QColor(0xd3, 0xd3, 0xd3));
+            pal.setColor(QPalette::ToolTipBase, QColor(0x3a, 0x3a, 0x3a));
+            pal.setColor(QPalette::ToolTipText, QColor(0xd3, 0xd3, 0xd3));
+        }
+        else
+        {
+            pal.setColor(QPalette::Window, QColor(0xff, 0xff, 0xff));
+            pal.setColor(QPalette::WindowText, QColor(0x00, 0x00, 0x00));
+            pal.setColor(QPalette::Base, QColor(0xff, 0xff, 0xff));
+            pal.setColor(QPalette::AlternateBase, QColor(0xf0, 0xf0, 0xf0));
+            pal.setColor(QPalette::Text, QColor(0x00, 0x00, 0x00));
+            pal.setColor(QPalette::Button, QColor(0xf0, 0xf0, 0xf0));
+            pal.setColor(QPalette::ButtonText, QColor(0x00, 0x00, 0x00));
+            pal.setColor(QPalette::ToolTipBase, QColor(0xff, 0xff, 0xff));
+            pal.setColor(QPalette::ToolTipText, QColor(0x00, 0x00, 0x00));
+        }
+        qApp->setPalette(pal);
+
         currentTheme = theme; // Update current theme
         SECURE_LOG(INFO, "MainWindow", QString("Successfully applied theme from: %1").arg(themeFilePath));
     }

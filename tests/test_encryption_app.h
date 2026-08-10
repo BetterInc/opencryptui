@@ -51,10 +51,6 @@ private slots:
     // Main test slots
     void testEncryptDecrypt();
     void testEncryptDecryptArgon2();
-    void testAllCiphersAndKDFs();
-    void testEncryptDecryptWithKeyfile();
-    void testVirtualDiskEncryption();
-    void testHiddenVolumeEncryption();
     void testSecureDiskWiping();
     void testTabSwitching();
     void testCryptoProviderSwitching();
@@ -62,7 +58,6 @@ private slots:
     void testContainerCreateOpen();
     void testEasyModeToggleAndEncrypt();
     void testEntropyQuality();
-    void testKeyDerivation();
     
     // Helper methods
     void cleanup();

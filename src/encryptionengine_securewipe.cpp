@@ -404,22 +404,45 @@ bool EncryptionEngine::secureWipeDisk(const QString& diskPath, int passes, bool 
         return false;
     }
     
-    // For safety, check if this is a system disk
+    // For safety, refuse to wipe anything that is currently mounted.
 #ifdef Q_OS_UNIX
-    // Get list of system partitions
+    // Parse the mount table and match THIS disk against each entry's device and
+    // mount point. A blanket substring search for "/" or "/boot" would match the
+    // root/boot lines present on every system and so refuse every wipe - which is
+    // why a plain regular file could never be wiped before.
     QProcess process;
     process.start("mount", QStringList());
     process.waitForFinished();
-    QString mountOutput = process.readAllStandardOutput();
-    
-    // Check if this disk is mounted as a system partition
-    if (mountOutput.contains(diskPath) || 
-        mountOutput.contains("/boot") || 
-        mountOutput.contains(" / ")) {
-        
-        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", 
-            QString("Refusing to wipe system disk or mounted partition: %1").arg(diskPath));
-        return false;
+    const QString mountOutput = QString::fromUtf8(process.readAllStandardOutput());
+    const QString canonicalPath = QFileInfo(diskPath).canonicalFilePath();
+
+    const QStringList mountLines = mountOutput.split('\n', Qt::SkipEmptyParts);
+    for (const QString& line : mountLines) {
+        // Each line looks like: "DEVICE on MOUNTPOINT type FSTYPE (opts)".
+        const int onIdx = line.indexOf(" on ");
+        if (onIdx < 0) continue;
+        const int typeIdx = line.indexOf(" type ", onIdx + 4);
+        if (typeIdx < 0) continue;
+        const QString device = line.left(onIdx).trimmed();
+        const QString mountPoint = line.mid(onIdx + 4, typeIdx - (onIdx + 4)).trimmed();
+
+        // Match the target by exact path, by its canonical path, or - for a
+        // whole-disk target like /dev/sda whose partition /dev/sda1 is mounted -
+        // by device prefix.
+        const bool matchesDevice =
+            device == diskPath ||
+            (!canonicalPath.isEmpty() && device == canonicalPath) ||
+            (diskPath.startsWith("/dev/") && device.startsWith(diskPath));
+        const bool matchesMount =
+            mountPoint == diskPath ||
+            (!canonicalPath.isEmpty() && mountPoint == canonicalPath);
+
+        if (matchesDevice || matchesMount) {
+            SECURE_LOG(ERROR_LEVEL, "EncryptionEngine",
+                QString("Refusing to wipe mounted disk or partition: %1 (mounted at %2)")
+                    .arg(diskPath).arg(mountPoint));
+            return false;
+        }
     }
 #elif defined(Q_OS_WIN)
     // On Windows, refuse to wipe C: drive and system partitions

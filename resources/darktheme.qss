@@ -16,7 +16,7 @@ QDialog, QMessageBox, QInputDialog {
 
 QMessageBox QLabel, QInputDialog QLabel {
     color: #d3d3d3;
-    background-color: transparent;
+    background-color: #2d2d2d;
 }
 
 QTextEdit, QTextBrowser, QPlainTextEdit {

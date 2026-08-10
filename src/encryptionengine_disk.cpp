@@ -44,6 +44,13 @@ bool EncryptionEngine::encryptDisk(const QString& diskPath, const SecureString& 
     QByteArray iv = generateSecureIV();
     // Removed lastIv storage for security reasons // Store for later use
 
+    // Defense-in-depth: never proceed with empty salt/IV. An empty salt would
+    // make key derivation deterministic; fail loudly rather than encrypt weakly.
+    if (salt.isEmpty() || iv.isEmpty()) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to generate secure salt/IV for disk encryption");
+        return false;
+    }
+
     // Derive the encryption key from the password (SecureString) + keyfiles
     QByteArray key = deriveKey(password, salt, keyfilePaths, kdf, iterations);
     
@@ -240,11 +247,17 @@ bool EncryptionEngine::encryptDiskSection(const QString& diskPath, const QString
     
     // Generate a secure salt for key derivation
     QByteArray salt = generateSecureSalt();
-    
+
     // Generate secure IV for encryption
     QByteArray iv = generateSecureIV();
     // Removed lastIv storage for security reasons // Store for later use
-    
+
+    // Defense-in-depth: never proceed with empty salt/IV (see encryptDisk).
+    if (salt.isEmpty() || iv.isEmpty()) {
+        SECURE_LOG(ERROR_LEVEL, "EncryptionEngine", "Failed to generate secure salt/IV for disk section encryption");
+        return false;
+    }
+
     // Derive the encryption key from the password and keyfiles
     QByteArray key = deriveKey(password, salt, keyfilePaths, kdf, iterations);
 
